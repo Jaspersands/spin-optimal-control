@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spin-optimal-control"
+version = "0.1.0"
+description = "Differentiable Optimal Control for Silicon Spin Exchange Gates under 1/f Charge Noise and Overhauser Drift"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+authors = [{name = "Jasper Sands"}]
+dependencies = [
+    "numpy>=1.23.0",
+    "scipy>=1.9.0",
+    "jax>=0.4.0",
+    "jaxlib>=0.4.0",
+    "cirq>=1.2.0",
+    "pennylane>=0.35.0",
+    "matplotlib>=3.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black",
+    "flake8",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
