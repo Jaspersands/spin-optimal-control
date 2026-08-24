@@ -14,8 +14,12 @@ from .cirq_backend import (
     run_randomized_benchmarking,
     run_interleaved_rb,
 )
+from .valley import SiliconValleyModel
+from .drag import DRAGPulseSynthesizer
+from .calibration import BayesianActiveCalibrator, CalibrationState
+from .awg_export import export_awg_waveforms
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "SiliconSpinHamiltonian",
     "ExchangeDynamics",
@@ -29,4 +33,9 @@ __all__ = [
     "CirqSiliconSimulator",
     "run_randomized_benchmarking",
     "run_interleaved_rb",
+    "SiliconValleyModel",
+    "DRAGPulseSynthesizer",
+    "BayesianActiveCalibrator",
+    "CalibrationState",
+    "export_awg_waveforms",
 ]
