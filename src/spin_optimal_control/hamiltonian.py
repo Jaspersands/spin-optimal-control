@@ -218,16 +218,18 @@ class ExchangeDynamics:
 
     @staticmethod
     def target_gate_swap() -> np.ndarray:
-        """Ideal SWAP gate."""
-        return np.array(
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            dtype=np.complex128,
-        )
+        """Target SWAP gate: Exchange pi angle."""
+        return np.array([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ], dtype=np.complex128)
+
+    @staticmethod
+    def target_gate_fourth_swap() -> np.ndarray:
+        """Target SWAP^(1/4) fractional exchange gate."""
+        return scipy.linalg.fractional_matrix_power(ExchangeDynamics.target_gate_swap(), 0.25)
 
     @staticmethod
     def target_gate_cz() -> np.ndarray:
