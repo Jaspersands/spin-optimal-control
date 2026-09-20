@@ -1,292 +1,343 @@
 """
-Differentiable Optimal Control (GRAPE & Smooth Fourier Basis) for Silicon Exchange.
+Differentiable optimal control (GRAPE in a smooth Fourier basis) for silicon
+exchange gates.
 
-Implements:
-1. Smooth Fourier / Slepian basis pulse parameterization with AWG slew-rate constraints.
-2. JAX-accelerated automatic differentiation of matrix exponentials.
-3. Robust ensemble optimization over 1/f charge noise and Overhauser detunings.
-4. Classical BFGS / Adam gradient ascent solver.
+* Pulse parameterisation: band-limited sine/cosine series with J(0) = J(T) = 0,
+  clipped to [0, J_max] (identical map in NumPy and JAX).
+* Loss: 1 − F_pro + λ_slew · mean((dJ/dt)²), optionally averaged over a
+  quasi-static noise ensemble (ε lever-arm scale × ΔB_z shift) with ``jax.vmap``.
+* Optional virtual-Z co-optimisation: four free Z-phases (before/after the
+  gate, one per qubit) are optimised jointly with the pulse, matching how
+  CZ-type gates are calibrated on hardware.
+* Solver: L-BFGS-B with analytic JAX gradients; NumPy central-difference
+  fallback when JAX is unavailable.
+
+Units: MHz and ns (``exchange angle = 2π·1e-3·∫J dt``).
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import List, Optional, Sequence, Tuple
+
 import numpy as np
-import scipy.linalg
 import scipy.optimize
-from dataclasses import dataclass
-from typing import Tuple, List, Optional, Callable, Dict, Any
+
+from . import hamiltonian as _ham
+from .hamiltonian import SiliconSpinHamiltonian, ExchangeDynamics
+from .units import MHZ_NS_TO_RAD
 
 try:
     import jax
     import jax.numpy as jnp
-    import jax.scipy.linalg
+
     jax.config.update("jax_enable_x64", True)
     HAS_JAX = True
-except ImportError:
+except ImportError:  # pragma: no cover
     HAS_JAX = False
     jax = None
     jnp = np
 
-from .hamiltonian import (
-    SiliconSpinHamiltonian,
-    HEISENBERG_EXCHANGE,
-    Z_DIFF,
-    Z_SUM,
-)
-
 
 @dataclass
 class PulseOptimizationResult:
-    """Stores the outcome of an optimal control optimization run."""
+    """Outcome of a pulse optimisation run."""
+
     optimal_params: np.ndarray
-    j_pulse: np.ndarray
-    detuning_pulse: np.ndarray
-    time_grid: np.ndarray
-    dt: float
-    gate_fidelity: float
+    j_pulse: np.ndarray               # MHz, shape (n_steps,)
+    detuning_pulse: np.ndarray        # mV, shape (n_steps,)
+    time_grid: np.ndarray             # ns, midpoints
+    dt: float                         # ns
+    gate_fidelity: float              # F_pro (with virtual-Z applied if enabled)
     infidelity: float
     iterations: int
     loss_history: List[float]
-    synthesized_unitary: np.ndarray
+    synthesized_unitary: np.ndarray   # raw propagator (no virtual-Z)
     target_unitary: np.ndarray
     is_converged: bool
+    virtual_z: Optional[np.ndarray] = None   # [a_pre, b_pre, c_post, d_post] rad
+    robust_fidelity_mean: Optional[float] = None
+    robust_fidelity_min: Optional[float] = None
+    exchange_area_mhz_ns: float = 0.0        # ∫J dt
+    n_starts: int = 1
 
 
 class SmoothFourierPulse:
     """
-    Smooth pulse parameterization based on sine/cosine Fourier series:
-        u(t) = u_base + sum_{k=1}^K a_k * sin(k * pi * t / T) + sum_{k=1}^K b_k * (1 - cos(2 * k * pi * t / T))
-    Ensures boundary conditions u(0) = 0, u(T) = 0 and limits high-frequency bandwidth.
+    Band-limited pulse envelope
+        u(t) = Σ_k a_k sin(kπt/T) + b_k (1 − cos(2kπt/T)),  k = 1..K
+    clipped to [0, J_max]. Both boundary values vanish identically.
     """
 
     def __init__(self, n_harmonics: int = 6, t_gate_ns: float = 40.0, j_max: float = 50.0):
-        self.n_harmonics = n_harmonics
-        self.t_gate = t_gate_ns
-        self.j_max = j_max
+        self.n_harmonics = int(n_harmonics)
+        self.t_gate = float(t_gate_ns)
+        self.j_max = float(j_max)
 
     def num_params(self) -> int:
         return 2 * self.n_harmonics
 
-    def evaluate_pulse_np(self, params: np.ndarray, time_grid: np.ndarray) -> np.ndarray:
-        """Evaluates smooth J(t) pulse on given time grid using NumPy."""
+    def _raw(self, xp, params, t):
         a = params[: self.n_harmonics]
-        b = params[self.n_harmonics :]
-        t = time_grid
-        T = self.t_gate
+        b = params[self.n_harmonics : 2 * self.n_harmonics]
+        k = xp.arange(1, self.n_harmonics + 1, dtype=float)
+        s = xp.sin(xp.outer(t, k) * (np.pi / self.t_gate))          # (n_t, K)
+        c = 1.0 - xp.cos(xp.outer(t, k) * (2.0 * np.pi / self.t_gate))
+        return s @ a + c @ b
 
-        pulse = np.zeros_like(t)
-        for k in range(self.n_harmonics):
-            freq_sin = (k + 1) * np.pi / T
-            freq_cos = 2 * (k + 1) * np.pi / T
-            pulse += a[k] * np.sin(freq_sin * t) + b[k] * (1.0 - np.cos(freq_cos * t))
+    def evaluate(self, params: np.ndarray, time_grid: np.ndarray) -> np.ndarray:
+        """J(t) on ``time_grid`` (NumPy)."""
+        raw = self._raw(np, np.asarray(params, dtype=float), np.asarray(time_grid, dtype=float))
+        return np.clip(raw, 0.0, self.j_max)
 
-        # Enforce physical positivity and max amplitude clipping with smooth sigmoid/softplus
-        pulse = np.clip(pulse, 0.0, self.j_max)
-        return pulse
+    def evaluate_jax(self, params, time_grid):
+        """J(t) on ``time_grid`` (JAX, differentiable)."""
+        raw = self._raw(jnp, params, time_grid)
+        return jnp.clip(raw, 0.0, self.j_max)
 
-    def evaluate_pulse_jax(self, params: "jnp.ndarray", time_grid: "jnp.ndarray") -> "jnp.ndarray":
-        """Evaluates smooth J(t) pulse on given time grid using JAX."""
-        a = params[: self.n_harmonics]
-        b = params[self.n_harmonics :]
-        T = self.t_gate
+    # Backwards-compatible aliases (v0.2 API)
+    evaluate_pulse_np = evaluate
+    evaluate_pulse_jax = evaluate_jax
 
-        pulse = jnp.zeros_like(time_grid)
-        for k in range(self.n_harmonics):
-            freq_sin = (k + 1) * np.pi / T
-            freq_cos = 2 * (k + 1) * np.pi / T
-            pulse = pulse + a[k] * jnp.sin(freq_sin * time_grid) + b[k] * (1.0 - jnp.cos(freq_cos * time_grid))
 
-        # Smooth softplus for non-negative exchange
-        pulse = jax.nn.softplus(pulse)
-        return pulse
+def _rz_np(theta: float) -> np.ndarray:
+    return np.diag([np.exp(-0.5j * theta), np.exp(0.5j * theta)])
 
 
 class GRAPEOptimizer:
     """
-    Gradient Ascent Pulse Engineering (GRAPE) and Fourier-envelope optimizer
-    for silicon exchange gates.
+    Gradient-based pulse optimiser for silicon exchange gates.
+
+    Parameters
+    ----------
+    hamiltonian : SiliconSpinHamiltonian
+    t_gate_ns : gate duration (ns)
+    n_steps : number of piecewise-constant slices; ``time_grid`` holds midpoints
+    n_harmonics : Fourier harmonics K (2K pulse parameters)
+    j_max : hard amplitude cap (MHz)
+    slew_penalty : weight λ on mean((ΔJ/Δt)²) in (MHz/ns)²
+    robust : average the fidelity over ``robust_eps_scales × robust_db_shifts``
+    local_z_free : co-optimise four virtual-Z phases
+    target_infidelity : convergence threshold reported in ``is_converged``
     """
 
     def __init__(
         self,
         hamiltonian: SiliconSpinHamiltonian,
         t_gate_ns: float = 40.0,
-        n_steps: int = 100,
+        n_steps: int = 80,
         n_harmonics: int = 6,
-        slew_rate_penalty: float = 1e-4,
-        max_amplitude: float = 60.0,
+        j_max: float = 60.0,
+        slew_penalty: float = 1e-6,
+        robust: bool = False,
+        robust_eps_scales: Sequence[float] = (0.95, 1.0, 1.05),
+        robust_db_shifts: Sequence[float] = (-0.5, 0.0, 0.5),
+        local_z_free: bool = False,
+        target_infidelity: float = 1e-4,
+        max_amplitude: Optional[float] = None,   # v0.2 alias for j_max
+        slew_rate_penalty: Optional[float] = None,  # v0.2 alias
     ):
+        if max_amplitude is not None:
+            j_max = max_amplitude
+        if slew_rate_penalty is not None:
+            slew_penalty = slew_rate_penalty
         self.h = hamiltonian
-        self.t_gate = t_gate_ns
-        self.n_steps = n_steps
-        self.dt = t_gate_ns / n_steps
-        self.time_grid = np.linspace(0.0, t_gate_ns, n_steps)
-        self.pulse_basis = SmoothFourierPulse(
-            n_harmonics=n_harmonics, t_gate_ns=t_gate_ns, j_max=max_amplitude
-        )
-        self.slew_penalty = slew_rate_penalty
-        self.max_amp = max_amplitude
+        self.t_gate = float(t_gate_ns)
+        self.n_steps = int(n_steps)
+        self.dt = self.t_gate / self.n_steps
+        self.time_grid = (np.arange(self.n_steps) + 0.5) * self.dt
+        self.j_max = float(j_max)
+        self.slew_penalty = float(slew_penalty)
+        self.robust = bool(robust)
+        self.eps_scales = tuple(float(x) for x in robust_eps_scales)
+        self.db_shifts = tuple(float(x) for x in robust_db_shifts)
+        self.local_z_free = bool(local_z_free)
+        self.target_infidelity = float(target_infidelity)
+        self.pulse_basis = SmoothFourierPulse(n_harmonics=n_harmonics, t_gate_ns=self.t_gate, j_max=self.j_max)
+        self.max_amp = self.j_max  # v0.2 attribute name
 
-        if HAS_JAX:
-            self._setup_jax_engine()
+        self._use_jax = HAS_JAX
+        if self._use_jax:
+            self._build_jax()
 
-    def _setup_jax_engine(self):
-        """Compiles fast differentiable JAX forward-backward loss graph."""
-        t_grid_jax = jnp.array(self.time_grid)
+    # ----------------------------------------------------------------- #
+    def num_params(self) -> int:
+        return self.pulse_basis.num_params() + (4 if self.local_z_free else 0)
+
+    def _split(self, params):
+        n_p = self.pulse_basis.num_params()
+        return params[:n_p], (params[n_p:n_p + 4] if self.local_z_free else None)
+
+    # ----------------------------------------------------------------- #
+    # JAX engine
+    # ----------------------------------------------------------------- #
+    def _build_jax(self):
+        t_grid = jnp.asarray(self.time_grid)
         dt = self.dt
         dB = float(self.h.delta_bz)
-        B0 = float(self.h.b_0)
-        n_harmonics = self.pulse_basis.n_harmonics
-        T = self.t_gate
+        basis = self.pulse_basis
+        slew_w = self.slew_penalty
+        local_z = self.local_z_free
+        n_p = basis.num_params()
 
-        def forward_unitary(params: jnp.ndarray, db_shift: float = 0.0, eps_scale: float = 1.0) -> jnp.ndarray:
-            a = params[:n_harmonics]
-            b = params[n_harmonics:]
+        scales = jnp.asarray(self.eps_scales) if self.robust else jnp.asarray([1.0])
+        shifts = jnp.asarray(self.db_shifts) if self.robust else jnp.asarray([0.0])
+        grid_s, grid_d = jnp.meshgrid(scales, shifts, indexing="ij")
+        grid_s, grid_d = grid_s.ravel(), grid_d.ravel()
 
-            pulse = jnp.zeros_like(t_grid_jax)
-            for k in range(n_harmonics):
-                freq_sin = (k + 1) * jnp.pi / T
-                freq_cos = 2 * (k + 1) * jnp.pi / T
-                pulse = pulse + a[k] * jnp.sin(freq_sin * t_grid_jax) + b[k] * (1.0 - jnp.cos(freq_cos * t_grid_jax))
+        def rz(theta):
+            return jnp.diag(jnp.array([jnp.exp(-0.5j * theta), jnp.exp(0.5j * theta)]))
 
-            j_vals = jax.nn.relu(pulse) * eps_scale
+        def fidelity_one(pulse, scale, db, zs, U_t):
+            U = _ham.propagate_unitary_jax(pulse * scale, dt, dB + db)
+            if local_z:
+                pre = jnp.kron(rz(zs[0]), rz(zs[1]))
+                post = jnp.kron(rz(zs[2]), rz(zs[3]))
+                U = post @ U @ pre
+            ov = jnp.trace(jnp.conj(U_t).T @ U)
+            return jnp.real(ov * jnp.conj(ov)) / 16.0
 
-            # Accumulate unitary propagation
-            U = jnp.eye(4, dtype=jnp.complex128)
-            for step in range(len(t_grid_jax)):
-                j_k = j_vals[step]
-                H_k = (
-                    (j_k / 4.0) * HEISENBERG_EXCHANGE
-                    + ((dB + db_shift) / 2.0) * Z_DIFF
-                    + (B0 / 2.0) * Z_SUM
-                )
-                U_k = jax.scipy.linalg.expm(-1.0j * H_k * dt)
-                U = U_k @ U
+        def loss_fn(params, U_t):
+            pulse = basis.evaluate_jax(params[:n_p], t_grid)
+            zs = params[n_p:n_p + 4] if local_z else jnp.zeros(4)
+            fids = jax.vmap(lambda s, d: fidelity_one(pulse, s, d, zs, U_t))(grid_s, grid_d)
+            F = jnp.mean(fids)
+            slew = slew_w * jnp.mean((jnp.diff(pulse) / dt) ** 2)
+            return 1.0 - F + slew
 
-            return U
+        self._jax_value_and_grad = jax.jit(jax.value_and_grad(loss_fn))
 
-        def loss_fn(params: jnp.ndarray, U_target: jnp.ndarray) -> jnp.ndarray:
-            U_actual = forward_unitary(params, 0.0, 1.0)
-            overlap = jnp.trace(jnp.conjugate(jnp.transpose(U_target)) @ U_actual)
-            fid = jnp.real(overlap * jnp.conjugate(overlap)) / 16.0
-            infidelity = 1.0 - fid
+    # ----------------------------------------------------------------- #
+    # NumPy engine
+    # ----------------------------------------------------------------- #
+    def _loss_numpy(self, params: np.ndarray, U_t: np.ndarray) -> float:
+        p_pulse, zs = self._split(params)
+        pulse = self.pulse_basis.evaluate(p_pulse, self.time_grid)
+        dyn = ExchangeDynamics(self.h)
+        scales = self.eps_scales if self.robust else (1.0,)
+        shifts = self.db_shifts if self.robust else (0.0,)
+        fids = []
+        for s in scales:
+            for d in shifts:
+                U = dyn.propagate_unitary(pulse * s, self.dt, np.full(self.n_steps, self.h.delta_bz + d))
+                if zs is not None:
+                    U = np.kron(_rz_np(zs[2]), _rz_np(zs[3])) @ U @ np.kron(_rz_np(zs[0]), _rz_np(zs[1]))
+                fids.append(dyn.gate_fidelity(U, U_t))
+        slew = self.slew_penalty * float(np.mean((np.diff(pulse) / self.dt) ** 2))
+        return 1.0 - float(np.mean(fids)) + slew
 
-            # Slew rate smoothness regularizer
-            diffs = params[1:] - params[:-1]
-            slew = jnp.sum(diffs**2) * 1e-4
-            return infidelity + slew
+    # ----------------------------------------------------------------- #
+    def loss_and_grad(self, params: np.ndarray, target_unitary: np.ndarray) -> Tuple[float, np.ndarray]:
+        """Loss and gradient at ``params`` (JAX autodiff, or central differences)."""
+        params = np.asarray(params, dtype=float)
+        if self._use_jax and HAS_JAX:
+            val, g = self._jax_value_and_grad(jnp.asarray(params), jnp.asarray(target_unitary, dtype=jnp.complex128))
+            return float(val), np.asarray(g, dtype=float)
+        base = self._loss_numpy(params, target_unitary)
+        grad = np.zeros_like(params)
+        eps = 1e-6
+        for i in range(len(params)):
+            pp = params.copy(); pp[i] += eps
+            pm = params.copy(); pm[i] -= eps
+            grad[i] = (self._loss_numpy(pp, target_unitary) - self._loss_numpy(pm, target_unitary)) / (2 * eps)
+        return base, grad
 
-        self._jax_loss_fn = loss_fn
-        self._jax_grad_fn = jax.jit(jax.grad(loss_fn))
-        self._jax_forward_fn = jax.jit(forward_unitary)
+    # ----------------------------------------------------------------- #
+    def _default_seeds(self, seed: int) -> List[np.ndarray]:
+        """Half-sine envelopes with exchange areas of 0.25/0.5/0.75 cycles (+ noise)."""
+        rng = np.random.default_rng(seed)
+        seeds = []
+        for cycles in (0.25, 0.5, 0.75):
+            p = np.zeros(self.num_params())
+            a1 = min(0.9 * self.j_max, cycles * 1e3 * np.pi / (2.0 * self.t_gate))
+            p[0] = a1
+            if self.pulse_basis.n_harmonics > 1:
+                p[1] = 0.05 * a1 * rng.standard_normal()
+            seeds.append(p)
+        return seeds
 
     def optimize_pulse(
         self,
         target_unitary: np.ndarray,
         initial_params: Optional[np.ndarray] = None,
-        max_iter: int = 150,
-        tolerance: float = 1e-6,
-        robust_ensemble: bool = False,
-        n_ensemble_samples: int = 8,
+        max_iter: int = 200,
+        tolerance: float = 1e-12,
+        seed: int = 0,
+        # v0.2 compatibility (robustness is now configured in the constructor)
+        robust_ensemble: Optional[bool] = None,
+        n_ensemble_samples: Optional[int] = None,
     ) -> PulseOptimizationResult:
-        """
-        Runs gradient-based pulse optimization to synthesize the target unitary.
-        """
-        n_p = self.pulse_basis.num_params()
-        if initial_params is None:
-            # Seed with smooth low-frequency trial envelope
-            initial_params = np.zeros(n_p)
-            initial_params[0] = 15.0  # fundamental harmonic
-            initial_params[1] = 5.0
-            initial_params[self.pulse_basis.n_harmonics] = 5.0
+        """Synthesise ``target_unitary``; multi-start when no initial guess is given."""
+        if robust_ensemble is not None and robust_ensemble != self.robust:
+            self.robust = bool(robust_ensemble)
+            if self._use_jax:
+                self._build_jax()
 
-        loss_history: List[float] = []
+        U_t = np.asarray(target_unitary, dtype=np.complex128)
+        starts = [np.asarray(initial_params, dtype=float)] if initial_params is not None else self._default_seeds(seed)
 
-        # Objective function for SciPy BFGS / L-BFGS-B
-        def objective(p: np.ndarray) -> Tuple[float, np.ndarray]:
-            if HAS_JAX and not robust_ensemble:
-                p_jax = jnp.array(p)
-                u_target_jax = jnp.array(target_unitary, dtype=jnp.complex128)
-                val = float(self._jax_loss_fn(p_jax, u_target_jax))
-                grad = np.array(self._jax_grad_fn(p_jax, u_target_jax), dtype=np.float64)
-            else:
-                # Robust ensemble or NumPy fallback
-                val, grad = self._compute_ensemble_loss_and_grad(
-                    p, target_unitary, n_ensemble_samples if robust_ensemble else 1
-                )
+        n_pulse = self.pulse_basis.num_params()
+        bounds = [(-self.j_max, self.j_max)] * n_pulse + ([(-2 * np.pi, 2 * np.pi)] * 4 if self.local_z_free else [])
 
-            loss_history.append(val)
-            return val, grad
+        best = None
+        for p0 in starts:
+            history: List[float] = []
 
-        # Optimize using L-BFGS-B
-        bounds = [(-20.0, self.max_amp) for _ in range(n_p)]
-        opt_res = scipy.optimize.minimize(
-            objective,
-            initial_params,
-            method="L-BFGS-B",
-            jac=True,
-            bounds=bounds,
-            options={"maxiter": max_iter, "ftol": tolerance, "disp": False},
-        )
+            def objective(p):
+                v, g = self.loss_and_grad(p, U_t)
+                history.append(v)
+                return v, g
 
-        opt_params = opt_res.x
-        j_pulse = self.pulse_basis.evaluate_pulse_np(opt_params, self.time_grid)
+            res = scipy.optimize.minimize(
+                objective, p0, method="L-BFGS-B", jac=True, bounds=bounds,
+                options={"maxiter": int(max_iter), "ftol": float(tolerance), "gtol": 1e-12},
+            )
+            if best is None or res.fun < best[0].fun:
+                best = (res, history)
+            if res.fun < self.target_infidelity * 1e-2:
+                break
 
-        # Propagate nominal unitary
-        from .hamiltonian import ExchangeDynamics
+        res, history = best
+        return self._package(res.x, history, U_t, len(starts))
+
+    # ----------------------------------------------------------------- #
+    def _package(self, params, history, U_t, n_starts) -> PulseOptimizationResult:
+        p_pulse, zs = self._split(params)
+        j_pulse = self.pulse_basis.evaluate(p_pulse, self.time_grid)
         dyn = ExchangeDynamics(self.h)
-        u_synth = dyn.propagate_unitary(j_pulse, self.dt)
-        final_fid = dyn.gate_fidelity(u_synth, target_unitary)
+        U = dyn.propagate_unitary(j_pulse, self.dt)
+        U_eval = U
+        if zs is not None:
+            U_eval = np.kron(_rz_np(zs[2]), _rz_np(zs[3])) @ U @ np.kron(_rz_np(zs[0]), _rz_np(zs[1]))
+        fid = dyn.gate_fidelity(U_eval, U_t)
 
-        # Invert exchange J -> detuning epsilon
-        detuning = self.h.epsilon_0 * np.log(np.maximum(j_pulse / self.h.j_0, 1e-4))
+        rob_mean = rob_min = None
+        if self.robust:
+            fids = []
+            for s in self.eps_scales:
+                for d in self.db_shifts:
+                    Us = dyn.propagate_unitary(j_pulse * s, self.dt, np.full(self.n_steps, self.h.delta_bz + d))
+                    if zs is not None:
+                        Us = np.kron(_rz_np(zs[2]), _rz_np(zs[3])) @ Us @ np.kron(_rz_np(zs[0]), _rz_np(zs[1]))
+                    fids.append(dyn.gate_fidelity(Us, U_t))
+            rob_mean, rob_min = float(np.mean(fids)), float(np.min(fids))
 
         return PulseOptimizationResult(
-            optimal_params=opt_params,
+            optimal_params=np.asarray(params, dtype=float),
             j_pulse=j_pulse,
-            detuning_pulse=detuning,
-            time_grid=self.time_grid,
+            detuning_pulse=self.h.detuning_from_exchange(j_pulse),
+            time_grid=self.time_grid.copy(),
             dt=self.dt,
-            gate_fidelity=final_fid,
-            infidelity=1.0 - final_fid,
-            iterations=len(loss_history),
-            loss_history=loss_history,
-            synthesized_unitary=u_synth,
-            target_unitary=target_unitary,
-            is_converged=bool(final_fid >= (1.0 - tolerance * 10)),
+            gate_fidelity=fid,
+            infidelity=1.0 - fid,
+            iterations=len(history),
+            loss_history=list(history),
+            synthesized_unitary=U,
+            target_unitary=U_t,
+            is_converged=bool((1.0 - fid) <= self.target_infidelity),
+            virtual_z=None if zs is None else np.asarray(zs, dtype=float),
+            robust_fidelity_mean=rob_mean,
+            robust_fidelity_min=rob_min,
+            exchange_area_mhz_ns=float(np.sum(j_pulse) * self.dt),
+            n_starts=n_starts,
         )
-
-    def _compute_ensemble_loss_and_grad(
-        self, params: np.ndarray, target_unitary: np.ndarray, n_samples: int
-    ) -> Tuple[float, np.ndarray]:
-        """Calculates loss and numerical finite-difference gradient over noise ensemble."""
-        eps_shifts = np.linspace(-0.05, 0.05, n_samples) if n_samples > 1 else [0.0]
-        db_shifts = np.linspace(-0.2, 0.2, n_samples) if n_samples > 1 else [0.0]
-
-        total_loss = 0.0
-        dp = 1e-5
-        grad = np.zeros_like(params)
-
-        def eval_loss(p_vec: np.ndarray) -> float:
-            j_p = self.pulse_basis.evaluate_pulse_np(p_vec, self.time_grid)
-            loss_acc = 0.0
-            for de in eps_shifts:
-                for db in db_shifts:
-                    j_perturbed = j_p * (1.0 + de)
-                    U = np.eye(4, dtype=np.complex128)
-                    for step in range(self.n_steps):
-                        H_k = self.h.get_hamiltonian_matrix(j_perturbed[step], self.h.delta_bz + db)
-                        U_k = scipy.linalg.expm(-1.0j * H_k * self.dt)
-                        U = U_k @ U
-                    fid = float(np.abs(np.trace(target_unitary.conj().T @ U)) ** 2 / 16.0)
-                    loss_acc += (1.0 - fid)
-            return loss_acc / (len(eps_shifts) * len(db_shifts))
-
-        base_loss = eval_loss(params)
-
-        for i in range(len(params)):
-            p_step = params.copy()
-            p_step[i] += dp
-            loss_step = eval_loss(p_step)
-            grad[i] = (loss_step - base_loss) / dp
-
-        return base_loss, grad
