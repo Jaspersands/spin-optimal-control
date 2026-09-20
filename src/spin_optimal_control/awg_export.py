@@ -1,15 +1,23 @@
 """
-Hardware AWG Waveform Exporters.
+Arbitrary-waveform-generator exporters.
 
-Exports optimized pulse waveforms into standard formats:
-1. JSON / CSV definition tables.
-2. Qblox / Zurich Instruments / Keysight compatible sample arrays.
+Waveforms are resampled to the instrument sample rate and written as
+
+* ``json``  – generic channel table with metadata,
+* ``csv``   – one row per sample (time, J, ε[, quadrature]),
+* ``qblox`` – Qblox Q1ASM-style ``{"waveforms": {name: {"data": [...], "index": i}}}``,
+* ``zi``    – Zurich Instruments CSV (header row + one column per channel).
 """
 
 from __future__ import annotations
+
+import csv
 import json
+from typing import Any, Dict, Optional
+
 import numpy as np
-from typing import Dict, Any, Optional
+
+SUPPORTED_FORMATS = ("json", "csv", "qblox", "zi")
 
 
 def export_awg_waveforms(
@@ -17,54 +25,68 @@ def export_awg_waveforms(
     j_pulse: np.ndarray,
     detuning_pulse: np.ndarray,
     quadrature_drag: Optional[np.ndarray] = None,
-    sample_rate_gsps: float = 1.0, # 1 GSa/s
-    export_format: str = "json",    # 'json', 'csv', 'qblox'
+    sample_rate_gsps: float = 1.0,
+    export_format: str = "json",
     file_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Exports continuous waveforms resampled to target AWG sample rate.
+    Resample the waveforms to ``sample_rate_gsps`` (GSa/s) and optionally write
+    them in ``export_format``. Returns the resampled data in all cases.
     """
-    t_max = time_grid[-1]
-    n_samples = int(np.round(t_max * sample_rate_gsps))
-    resampled_t = np.linspace(0.0, t_max, n_samples)
+    fmt = export_format.lower()
+    if fmt not in SUPPORTED_FORMATS:
+        raise ValueError(f"export_format must be one of {SUPPORTED_FORMATS}, got {export_format!r}")
 
-    # Linear interpolation
-    j_resampled = np.interp(resampled_t, time_grid, j_pulse)
-    eps_resampled = np.interp(resampled_t, time_grid, detuning_pulse)
+    t = np.asarray(time_grid, dtype=float)
+    # The grid holds slice midpoints; the waveform window is [t0 - dt/2, tN + dt/2].
+    dt_in = float(t[1] - t[0]) if len(t) > 1 else 1.0 / sample_rate_gsps
+    t_start = float(t[0]) - 0.5 * dt_in
+    duration = len(t) * dt_in
+    n_samples = max(int(np.round(duration * sample_rate_gsps)), 1)
+    t_res = t_start + (np.arange(n_samples) + 0.5) / sample_rate_gsps
 
-    data = {
+    j_res = np.interp(t_res, t, np.asarray(j_pulse, dtype=float))
+    eps_res = np.interp(t_res, t, np.asarray(detuning_pulse, dtype=float))
+    q_res = None if quadrature_drag is None else np.interp(t_res, t, np.asarray(quadrature_drag, dtype=float))
+
+    channels: Dict[str, list] = {
+        "exchange_j_mhz": [float(x) for x in np.round(j_res, 6)],
+        "detuning_eps_mv": [float(x) for x in np.round(eps_res, 6)],
+    }
+    if q_res is not None:
+        channels["drag_quadrature"] = [float(x) for x in np.round(q_res, 6)]
+
+    data: Dict[str, Any] = {
         "metadata": {
-            "sample_rate_gsps": sample_rate_gsps,
-            "duration_ns": float(t_max),
+            "format": fmt,
+            "sample_rate_gsps": float(sample_rate_gsps),
+            "duration_ns": duration,
             "num_samples": n_samples,
-            "instrument_target": "Qblox / Zurich Instruments / Keysight AWG",
+            "time_ns": [float(x) for x in np.round(t_res, 6)],
+            "instrument_target": {
+                "json": "generic", "csv": "generic",
+                "qblox": "Qblox QCM / Cluster", "zi": "Zurich Instruments HDAWG",
+            }[fmt],
         },
-        "channels": {
-            "ch1_exchange_j_mhz": list(np.round(j_resampled, 5)),
-            "ch2_detuning_eps_mv": list(np.round(eps_resampled, 5)),
-        }
+        "channels": channels,
     }
 
-    if quadrature_drag is not None:
-        q_resampled = np.interp(resampled_t, time_grid, quadrature_drag)
-        data["channels"]["ch3_drag_quadrature"] = list(np.round(q_resampled, 5))
-
     if file_path:
-        if export_format == "json":
+        if fmt == "json":
             with open(file_path, "w") as f:
                 json.dump(data, f, indent=2)
-        elif export_format == "csv":
-            import csv
+        elif fmt == "qblox":
+            payload = {
+                "waveforms": {name: {"data": vals, "index": i} for i, (name, vals) in enumerate(channels.items())},
+                "metadata": {k: v for k, v in data["metadata"].items() if k != "time_ns"},
+            }
+            with open(file_path, "w") as f:
+                json.dump(payload, f, indent=2)
+        else:  # csv / zi
             with open(file_path, "w", newline="") as f:
                 writer = csv.writer(f)
-                headers = ["time_ns", "exchange_j_mhz", "detuning_eps_mv"]
-                if quadrature_drag is not None:
-                    headers.append("drag_quadrature")
-                writer.writerow(headers)
+                writer.writerow(["time_ns", *channels.keys()])
+                cols = list(channels.values())
                 for i in range(n_samples):
-                    row = [resampled_t[i], j_resampled[i], eps_resampled[i]]
-                    if quadrature_drag is not None:
-                        row.append(q_resampled[i])
-                    writer.writerow(row)
-
+                    writer.writerow([float(np.round(t_res[i], 6))] + [c[i] for c in cols])
     return data

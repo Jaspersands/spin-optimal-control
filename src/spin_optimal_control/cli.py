@@ -1,100 +1,194 @@
 """
-Command-Line Interface for spin_optimal_control.
+Command-line interface: ``spin-control <command>``.
+
+Commands
+--------
+optimize   GRAPE synthesis of an exchange gate (optionally robust / virtual-Z / DRAG) with AWG export
+valley     valley leakage of a half-sine pulse versus valley splitting
+rb         two-qubit Clifford randomized benchmarking under T1/T2*
+noise-psd  generate a 1/f trace and report its fitted spectral slope
+benchmark  the full benchmark suite (same as ``python benchmarks/run_benchmarks.py``)
+
+Add ``--json`` to any command for machine-readable output.
 """
 
 from __future__ import annotations
+
 import argparse
-import sys
 import json
+import sys
+from typing import Any, Dict, List, Optional
+
 import numpy as np
+
 from .hamiltonian import SiliconSpinHamiltonian, ExchangeDynamics
 from .grape import GRAPEOptimizer
 from .valley import SiliconValleyModel
 from .drag import DRAGPulseSynthesizer
 from .awg_export import export_awg_waveforms
+from .noise import PinkNoiseGenerator, SiliconNoiseModel
+
+TARGETS = {
+    "sqrt_swap": ExchangeDynamics.target_gate_sqrt_swap,
+    "swap": ExchangeDynamics.target_gate_swap,
+    "fourth_swap": ExchangeDynamics.target_gate_fourth_swap,
+    "cz": ExchangeDynamics.target_gate_cz,
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="spin-control",
-        description="Silicon Spin Pulse Optimal Control CLI (GRAPE / Valley / DRAG / AWG)",
+        description="Silicon spin exchange-gate optimal control (GRAPE / valley / RB / noise / AWG)",
     )
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    sub = parser.add_subparsers(dest="command")
 
-    # Command: optimize
-    opt_parser = subparsers.add_parser("optimize", help="Optimize spin exchange pulse via JAX GRAPE")
-    opt_parser.add_argument(
-        "--target",
-        type=str,
-        choices=["sqrt_swap", "swap", "fourth_swap", "cz"],
-        default="sqrt_swap",
-        help="Target two-qubit exchange operation",
-    )
-    opt_parser.add_argument("--duration", type=float, default=30.0, help="Gate duration in ns")
-    opt_parser.add_argument("--j0", type=float, default=20.0, help="Baseline exchange J0 in MHz")
-    opt_parser.add_argument("--steps", type=int, default=60, help="Time discretization steps")
-    opt_parser.add_argument("--drag", action="store_true", help="Apply analytical DRAG correction")
-    opt_parser.add_argument("--ev", type=float, default=120.0, help="Valley splitting Ev in ueV")
-    opt_parser.add_argument("--output", type=str, default=None, help="Output file path for AWG waveform JSON")
+    p = sub.add_parser("optimize", help="Optimise an exchange pulse with JAX GRAPE")
+    p.add_argument("--target", choices=sorted(TARGETS), default="sqrt_swap")
+    p.add_argument("--duration", type=float, default=30.0, help="gate duration (ns)")
+    p.add_argument("--j0", type=float, default=20.0, help="baseline exchange J0 (MHz)")
+    p.add_argument("--dbz", type=float, default=0.0, help="Zeeman gradient ΔBz (MHz)")
+    p.add_argument("--jmax", type=float, default=40.0, help="amplitude cap (MHz)")
+    p.add_argument("--steps", type=int, default=60)
+    p.add_argument("--harmonics", type=int, default=6)
+    p.add_argument("--max-iter", type=int, default=300)
+    p.add_argument("--robust", action="store_true", help="average over a quasi-static noise ensemble")
+    p.add_argument("--local-z", action="store_true", help="co-optimise virtual-Z phases")
+    p.add_argument("--drag", action="store_true", help="apply derivative (DRAG-style) correction")
+    p.add_argument("--format", choices=["json", "csv", "qblox", "zi"], default="json")
+    p.add_argument("--output", type=str, default=None, help="AWG waveform file")
+    p.add_argument("--json", action="store_true")
 
-    # Command: valley
-    val_parser = subparsers.add_parser("valley", help="Simulate valley leakage for a given pulse")
-    val_parser.add_argument("--ev", type=float, default=120.0, help="Valley splitting Ev in ueV")
-    val_parser.add_argument("--j-max", type=float, default=30.0, help="Peak exchange amplitude in MHz")
-    val_parser.add_argument("--duration", type=float, default=30.0, help="Pulse duration in ns")
+    v = sub.add_parser("valley", help="Valley leakage for a half-sine pulse")
+    v.add_argument("--ev", type=float, default=120.0, help="valley splitting (µeV)")
+    v.add_argument("--soc", type=float, default=2.5, help="inter-valley SOC (MHz)")
+    v.add_argument("--j-max", type=float, default=30.0)
+    v.add_argument("--duration", type=float, default=30.0)
+    v.add_argument("--dbz", type=float, default=15.0)
+    v.add_argument("--json", action="store_true")
 
+    r = sub.add_parser("rb", help="Two-qubit Clifford randomized benchmarking")
+    r.add_argument("--lengths", type=str, default="1,2,4,8,16")
+    r.add_argument("--sequences", type=int, default=6)
+    r.add_argument("--t1", type=float, default=1000.0, help="µs")
+    r.add_argument("--t2", type=float, default=20.0, help="µs")
+    r.add_argument("--seed", type=int, default=0)
+    r.add_argument("--json", action="store_true")
+
+    n = sub.add_parser("noise-psd", help="Generate a 1/f^α trace and fit its spectral slope")
+    n.add_argument("--alpha", type=float, default=1.0)
+    n.add_argument("--steps", type=int, default=4096)
+    n.add_argument("--dt", type=float, default=0.1, help="ns")
+    n.add_argument("--seed", type=int, default=0)
+    n.add_argument("--json", action="store_true")
+
+    b = sub.add_parser("benchmark", help="Run the benchmark suite")
+    b.add_argument("--json", action="store_true")
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def _emit(payload: Dict[str, Any], as_json: bool, lines: List[str]) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o)))
+    else:
+        print("\n".join(lines))
+
+
+def cmd_optimize(args) -> int:
+    h = SiliconSpinHamiltonian(j_0=args.j0, delta_bz=args.dbz)
+    opt = GRAPEOptimizer(
+        h, t_gate_ns=args.duration, n_steps=args.steps, n_harmonics=args.harmonics,
+        j_max=args.jmax, robust=args.robust, local_z_free=args.local_z,
+    )
+    res = opt.optimize_pulse(TARGETS[args.target](), max_iter=args.max_iter)
+    in_phase, quad = res.j_pulse, None
+    if args.drag:
+        in_phase, quad = DRAGPulseSynthesizer(delta_bz_mhz=max(args.dbz, 1e-3)).apply_drag_correction(res.j_pulse, res.dt)
+    if args.output:
+        export_awg_waveforms(res.time_grid, in_phase, res.detuning_pulse, quad,
+                             export_format=args.format, file_path=args.output)
+    payload = {
+        "target": args.target, "duration_ns": args.duration, "j0_mhz": args.j0, "dbz_mhz": args.dbz,
+        "gate_fidelity": res.gate_fidelity, "infidelity": res.infidelity, "iterations": res.iterations,
+        "converged": res.is_converged, "exchange_area_mhz_ns": res.exchange_area_mhz_ns,
+        "peak_j_mhz": float(res.j_pulse.max()), "virtual_z": res.virtual_z,
+        "robust_fidelity_mean": res.robust_fidelity_mean, "output": args.output,
+        "j_pulse": res.j_pulse, "time_grid": res.time_grid,
+    }
+    lines = [
+        f"[*] {args.target} | T = {args.duration} ns | J0 = {args.j0} MHz | ΔBz = {args.dbz} MHz",
+        f"[+] Gate fidelity {res.gate_fidelity*100:.5f}% (infidelity {res.infidelity:.2e}) in {res.iterations} evaluations",
+        f"[+] Exchange area ∫J dt = {res.exchange_area_mhz_ns:.1f} MHz·ns, peak J = {res.j_pulse.max():.2f} MHz",
+    ]
+    if res.virtual_z is not None:
+        lines.append(f"[+] Virtual-Z phases (rad): {np.round(res.virtual_z, 4).tolist()}")
+    if res.robust_fidelity_mean is not None:
+        lines.append(f"[+] Ensemble fidelity mean/min: {res.robust_fidelity_mean:.5f} / {res.robust_fidelity_min:.5f}")
+    if args.output:
+        lines.append(f"[+] Wrote {args.format} waveforms to {args.output}")
+    _emit(payload, args.json, lines)
+    return 0
+
+
+def cmd_valley(args) -> int:
+    vm = SiliconValleyModel(valley_splitting_uev=args.ev, inter_valley_soc_mhz=args.soc)
+    n = 120
+    dt = args.duration / n
+    t = (np.arange(n) + 0.5) * dt
+    pulse = args.j_max * np.sin(np.pi * t / args.duration)
+    res = vm.compute_valley_leakage(pulse, dt_ns=dt, delta_bz=args.dbz)
+    payload = {k: v for k, v in res.items() if not isinstance(v, np.ndarray)}
+    lines = [
+        f"[+] Valley splitting: {res['valley_splitting_mhz']:.1f} MHz ({args.ev} µeV)",
+        f"[+] Max / final valley leakage: {res['max_valley_leakage']:.3e} / {res['final_valley_leakage']:.3e}",
+    ]
+    _emit(payload, args.json, lines)
+    return 0
+
+
+def cmd_rb(args) -> int:
+    from .cirq_backend import run_randomized_benchmarking
+    lengths = [int(x) for x in args.lengths.split(",")]
+    noise = SiliconNoiseModel(t1_us=args.t1, t2_star_us=args.t2)
+    res = run_randomized_benchmarking(lengths, n_sequences_per_length=args.sequences, noise_model=noise, seed=args.seed)
+    lines = [f"[+] Two-qubit Clifford RB (T1={args.t1} µs, T2*={args.t2} µs)"]
+    for m, f in zip(res["lengths"], res["fidelities"]):
+        lines.append(f"    m={m:3d}  P(00)={f:.4f}")
+    lines.append(f"[+] decay p = {res['decay_p']:.5f}, error per Clifford = {res['clifford_error']:.3e}")
+    _emit(res, args.json, lines)
+    return 0
+
+
+def cmd_noise_psd(args) -> int:
+    gen = PinkNoiseGenerator(alpha=args.alpha, amplitude=1.0, seed=args.seed)
+    acc = None
+    for _ in range(20):
+        f, psd = gen.psd_estimate(gen.generate_spectral_trace(args.steps, args.dt), args.dt)
+        acc = psd if acc is None else acc + psd
+    acc /= 20
+    lo, hi = np.percentile(f, [10, 80])
+    band = (f > lo) & (f < hi)
+    slope = float(np.polyfit(np.log10(f[band]), np.log10(acc[band]), 1)[0])
+    payload = {"alpha": args.alpha, "slope": slope, "n_points": int(band.sum())}
+    _emit(payload, args.json, [f"[+] α = {args.alpha}: fitted PSD slope = {slope:.3f} (expected ≈ {-args.alpha:.1f})"])
+    return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-
     if not args.command:
         parser.print_help()
         return 0
-
-    if args.command == "optimize":
-        print(f"[*] Initializing Silicon DQD Hamiltonian (J0={args.j0} MHz, T={args.duration} ns)...")
-        h = SiliconSpinHamiltonian(j_0=args.j0, delta_bz=15.0)
-        opt = GRAPEOptimizer(h, t_gate_ns=args.duration, n_steps=args.steps, n_harmonics=6)
-
-        target_map = {
-            "sqrt_swap": ExchangeDynamics.target_gate_sqrt_swap(),
-            "swap": ExchangeDynamics.target_gate_swap(),
-            "fourth_swap": ExchangeDynamics.target_gate_fourth_swap(),
-            "cz": ExchangeDynamics.target_gate_cz(),
-        }
-        target_u = target_map[args.target]
-
-        print(f"[*] Running JAX GRAPE optimization for {args.target}...")
-        res = opt.optimize_pulse(target_u)
-        print(f"[+] Optimization Converged! Gate Fidelity: {res.gate_fidelity * 100:.4f}% (Infidelity: {res.infidelity:.2e})")
-
-        in_phase = res.j_pulse
-        quad = None
-        if args.drag:
-            print("[*] Applying analytical DRAG correction...")
-            drag = DRAGPulseSynthesizer(delta_bz_mhz=15.0)
-            in_phase, quad = drag.apply_drag_correction(res.j_pulse, res.dt)
-
-        if args.output:
-            export_awg_waveforms(res.time_grid, in_phase, res.detuning_pulse, quad, file_path=args.output)
-            print(f"[+] Saved AWG waveforms to {args.output}")
-
-        return 0
-
-    elif args.command == "valley":
-        vm = SiliconValleyModel(valley_splitting_uev=args.ev)
-        t_grid = np.linspace(0, args.duration, 60)
-        dt = args.duration / 60.0
-        pulse = args.j_max * np.sin(np.pi * t_grid / args.duration)
-        res = vm.compute_valley_leakage(pulse, dt=dt)
-        print(f"[+] Valley Splitting: {res['valley_splitting_mhz']:.1f} MHz ({args.ev} ueV)")
-        print(f"[+] Final Valley Leakage: {res['final_valley_leakage'] * 100:.4f}%")
-        return 0
-
-    return 0
+    if args.command == "benchmark":
+        from . import benchmark as bench
+        return bench.run_full_benchmark(as_json=args.json)
+    return {
+        "optimize": cmd_optimize,
+        "valley": cmd_valley,
+        "rb": cmd_rb,
+        "noise-psd": cmd_noise_psd,
+    }[args.command](args)
 
 
 if __name__ == "__main__":
