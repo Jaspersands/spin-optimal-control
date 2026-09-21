@@ -283,4 +283,5 @@ def filter_function_infidelity(
     omega = np.logspace(np.log10(2 * np.pi / (100.0 * T)), np.log10(np.pi / dt_ns), int(n_omega))
     ff = filter_function(j_pulse, dt_ns, omega)
     integrand = np.asarray(psd_func(omega)) * ff
-    return float(sensitivity**2 / (2 * np.pi) * np.trapezoid(integrand, omega))
+    _trapz = getattr(np, "trapezoid", None) or np.trapz   # NumPy < 2.0 compatibility
+    return float(sensitivity**2 / (2 * np.pi) * _trapz(integrand, omega))
