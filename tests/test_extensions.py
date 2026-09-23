@@ -19,7 +19,7 @@ from spin_optimal_control.cli import main as cli_main
 
 
 def test_version():
-    assert __version__ == "0.3.0"
+    assert __version__ == "0.4.0"
 
 
 # ----------------------------------------------------------------------------- #

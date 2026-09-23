@@ -30,7 +30,7 @@ def run_full_benchmark(as_json: bool = False, quick: bool = False) -> int:
             log.append(msg)
 
     say("=" * 70)
-    say("SILICON SPIN EXCHANGE OPTIMAL CONTROL BENCHMARK  (v0.3, MHz / ns units)")
+    say("SILICON SPIN EXCHANGE OPTIMAL CONTROL BENCHMARK  (v0.4, MHz / ns units)")
     say("=" * 70)
 
     # 1. √SWAP with a small residual gradient (no micromagnet)

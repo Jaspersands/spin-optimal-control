@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spin-optimal-control"
-version = "0.3.0"
+version = "0.4.0"
 description = "Differentiable optimal control for silicon spin exchange gates: JAX GRAPE, 1/f charge noise, Lindblad, toggle-frame filter functions, native-gate two-qubit Clifford RB in Cirq, adiabatic CZ pulse shaping, valley leakage, AWG export"
 readme = "README.md"
 requires-python = ">=3.10"

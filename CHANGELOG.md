@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0 — 2026-09-23
+
+Changes from an adversarial review of 0.3.
+
+### Removed
+- `drag` and the `--drag` CLI flag. Exchange is a scalar baseband control with no quadrature, and no propagator ever used the computed "quadrature". The AWG exporter now takes arbitrary extra channels instead.
+
+### Added
+- `pulse_shaping`: square, cosine, Tukey and Blackman exchange windows calibrated to a CZ (the conditional phase depends only on pulse area), with leakage and fidelity from the exact propagator; `spin-control shape`.
+- Toggle-frame filter functions (`control_matrix`, `gate_filter_functions`, `infidelity_from_filter_function`) with exact per-slice integrals, validated against Monte-Carlo with coloured noise. `filter_function_infidelity` now uses them.
+- Thermal relaxation: `temperature_mk` and `larmor_frequency_mhz` split 1/T₁ into decay and excitation by detailed balance; `idle_superoperator`.
+- `clifford_compiler` and `CompiledCliffordRB`: native-gate two-qubit RB (±X/2, ±Y/2, virtual Z, CZ; 1.5 CZ per Clifford) with per-gate noise and an optional non-ideal CZ; `spin-control rb` uses it by default.
+
+### Fixed
+- Cirq amplitude damping relaxed towards |0⟩ = |↑⟩, the opposite of the Lindblad model; it now uses generalised amplitude damping towards the thermal state.
+
+### Changed
+- PennyLane removed (never imported); Cirq and matplotlib are optional extras.
+- Notebook renamed to `01_exchange_gates_noise_and_benchmarking.ipynb` and extended.
+- Tests: 65 → 79.
+
 ## 0.3.0 — 2026-09-21
 
 ### Fixed (correctness)
