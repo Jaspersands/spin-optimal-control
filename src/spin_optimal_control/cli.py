@@ -3,9 +3,10 @@ Command-line interface: ``spin-control <command>``.
 
 Commands
 --------
-optimize   GRAPE synthesis of an exchange gate (optionally robust / virtual-Z / DRAG) with AWG export
+optimize   GRAPE synthesis of an exchange gate (optionally robust / virtual-Z) with AWG export
+shape      window-shaped adiabatic CZ: leakage and fidelity per window and duration
 valley     valley leakage of a half-sine pulse versus valley splitting
-rb         two-qubit Clifford randomized benchmarking under T1/T2*
+rb         two-qubit Clifford randomized benchmarking on native gates under T1/T2*
 noise-psd  generate a 1/f trace and report its fitted spectral slope
 benchmark  the full benchmark suite (same as ``python benchmarks/run_benchmarks.py``)
 
@@ -24,7 +25,7 @@ import numpy as np
 from .hamiltonian import SiliconSpinHamiltonian, ExchangeDynamics
 from .grape import GRAPEOptimizer
 from .valley import SiliconValleyModel
-from .drag import DRAGPulseSynthesizer
+from .pulse_shaping import AdiabaticCZDesigner, WINDOWS
 from .awg_export import export_awg_waveforms
 from .noise import PinkNoiseGenerator, SiliconNoiseModel
 
@@ -54,10 +55,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-iter", type=int, default=300)
     p.add_argument("--robust", action="store_true", help="average over a quasi-static noise ensemble")
     p.add_argument("--local-z", action="store_true", help="co-optimise virtual-Z phases")
-    p.add_argument("--drag", action="store_true", help="apply derivative (DRAG-style) correction")
     p.add_argument("--format", choices=["json", "csv", "qblox", "zi"], default="json")
     p.add_argument("--output", type=str, default=None, help="AWG waveform file")
     p.add_argument("--json", action="store_true")
+
+    w = sub.add_parser("shape", help="Window-shaped adiabatic CZ versus duration")
+    w.add_argument("--dbz", type=float, default=20.0, help="Zeeman gradient ΔBz (MHz)")
+    w.add_argument("--durations", type=str, default="50,100,200", help="ns, comma-separated")
+    w.add_argument("--windows", type=str, default=",".join(WINDOWS))
+    w.add_argument("--json", action="store_true")
 
     v = sub.add_parser("valley", help="Valley leakage for a half-sine pulse")
     v.add_argument("--ev", type=float, default=120.0, help="valley splitting (µeV)")
@@ -73,6 +79,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--t1", type=float, default=1000.0, help="µs")
     r.add_argument("--t2", type=float, default=20.0, help="µs")
     r.add_argument("--seed", type=int, default=0)
+    r.add_argument("--abstract", action="store_true", help="Clifford-level model (one ideal layer per Clifford) instead of native gates")
+    r.add_argument("--t-pulse", type=float, default=50.0, help="π/2 pulse duration (ns), native model")
+    r.add_argument("--t-cz", type=float, default=100.0, help="CZ duration (ns), native model")
     r.add_argument("--json", action="store_true")
 
     n = sub.add_parser("noise-psd", help="Generate a 1/f^α trace and fit its spectral slope")
@@ -101,11 +110,8 @@ def cmd_optimize(args) -> int:
         j_max=args.jmax, robust=args.robust, local_z_free=args.local_z,
     )
     res = opt.optimize_pulse(TARGETS[args.target](), max_iter=args.max_iter)
-    in_phase, quad = res.j_pulse, None
-    if args.drag:
-        in_phase, quad = DRAGPulseSynthesizer(delta_bz_mhz=max(args.dbz, 1e-3)).apply_drag_correction(res.j_pulse, res.dt)
     if args.output:
-        export_awg_waveforms(res.time_grid, in_phase, res.detuning_pulse, quad,
+        export_awg_waveforms(res.time_grid, res.j_pulse, res.detuning_pulse,
                              export_format=args.format, file_path=args.output)
     payload = {
         "target": args.target, "duration_ns": args.duration, "j0_mhz": args.j0, "dbz_mhz": args.dbz,
@@ -130,6 +136,22 @@ def cmd_optimize(args) -> int:
     return 0
 
 
+def cmd_shape(args) -> int:
+    designer = AdiabaticCZDesigner(SiliconSpinHamiltonian(delta_bz=args.dbz))
+    durations = [float(x) for x in args.durations.split(",")]
+    shapes = [x.strip() for x in args.windows.split(",")]
+    rows = {s: [designer.calibrate(s, T) for T in durations] for s in shapes}
+    payload = {"delta_bz_mhz": args.dbz, "durations_ns": durations,
+               "windows": {s: [{"j_max_mhz": r.j_max_mhz, "swap_leakage": r.swap_leakage, "infidelity": r.infidelity} for r in rs]
+                           for s, rs in rows.items()}}
+    lines = [f"CZ from a window-shaped exchange pulse, ΔBz = {args.dbz} MHz (area 500 MHz·ns; infidelity up to local Z)",
+             "  window    " + "".join(f"{T:>12.0f} ns" for T in durations)]
+    for s, rs in rows.items():
+        lines.append(f"  {s:9s} " + "".join(f"{r.infidelity:>15.2e}" for r in rs))
+    _emit(payload, args.json, lines)
+    return 0
+
+
 def cmd_valley(args) -> int:
     vm = SiliconValleyModel(valley_splitting_uev=args.ev, inter_valley_soc_mhz=args.soc)
     n = 120
@@ -147,11 +169,16 @@ def cmd_valley(args) -> int:
 
 
 def cmd_rb(args) -> int:
-    from .cirq_backend import run_randomized_benchmarking
+    from .cirq_backend import CompiledCliffordRB, run_randomized_benchmarking
     lengths = [int(x) for x in args.lengths.split(",")]
     noise = SiliconNoiseModel(t1_us=args.t1, t2_star_us=args.t2)
-    res = run_randomized_benchmarking(lengths, n_sequences_per_length=args.sequences, noise_model=noise, seed=args.seed)
-    lines = [f"[+] Two-qubit Clifford RB (T1={args.t1} µs, T2*={args.t2} µs)"]
+    if args.abstract:
+        res = run_randomized_benchmarking(lengths, n_sequences_per_length=args.sequences, noise_model=noise, seed=args.seed)
+        lines = [f"[+] Clifford-level two-qubit RB (T1={args.t1} µs, T2*={args.t2} µs)"]
+    else:
+        res = CompiledCliffordRB(noise, t_pulse_ns=args.t_pulse, t_cz_ns=args.t_cz).run(lengths, n_sequences=args.sequences, seed=args.seed)
+        lines = [f"[+] Native-gate two-qubit RB (T1={args.t1} µs, T2*={args.t2} µs, π/2 = {args.t_pulse} ns, CZ = {args.t_cz} ns; "
+                 f"{res['mean_cz_per_clifford']:.2f} CZ / Clifford)"]
     for m, f in zip(res["lengths"], res["fidelities"]):
         lines.append(f"    m={m:3d}  P(00)={f:.4f}")
     lines.append(f"[+] decay p = {res['decay_p']:.5f}, error per Clifford = {res['clifford_error']:.3e}")
@@ -185,6 +212,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return bench.run_full_benchmark(as_json=args.json)
     return {
         "optimize": cmd_optimize,
+        "shape": cmd_shape,
         "valley": cmd_valley,
         "rb": cmd_rb,
         "noise-psd": cmd_noise_psd,

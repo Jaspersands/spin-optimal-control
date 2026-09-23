@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "spin-optimal-control"
 version = "0.3.0"
-description = "Differentiable optimal control for silicon spin exchange gates: JAX GRAPE, 1/f charge noise, Lindblad, filter functions, two-qubit Clifford RB in Cirq, valley leakage, AWG export"
+description = "Differentiable optimal control for silicon spin exchange gates: JAX GRAPE, 1/f charge noise, Lindblad, toggle-frame filter functions, native-gate two-qubit Clifford RB in Cirq, adiabatic CZ pulse shaping, valley leakage, AWG export"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -16,17 +16,17 @@ dependencies = [
     "numpy>=1.24.0",
     "scipy>=1.10.0",
     "jax>=0.4.0",
-    "jaxlib>=0.4.0",
-    "cirq>=1.3.0",
-    "pennylane>=0.35.0",
-    "matplotlib>=3.7.0",
 ]
 
 [project.scripts]
 spin-control = "spin_optimal_control.cli:main"
 
 [project.optional-dependencies]
+cirq = ["cirq-core>=1.3.0"]            # randomized benchmarking
+plots = ["matplotlib>=3.7.0"]
 dev = [
+    "cirq-core>=1.3.0",
+    "matplotlib>=3.7.0",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
 ]

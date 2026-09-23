@@ -1,6 +1,6 @@
 """
-Tests for the v0.3 extensions: valley leakage, derivative (DRAG-style)
-corrections, Bayesian drift tracking, AWG exporters, and the CLI.
+Tests for the v0.3 extensions: valley leakage, window-shaped adiabatic CZ
+Bayesian drift tracking, AWG exporters, and the CLI.
 """
 
 import json
@@ -10,7 +10,8 @@ import numpy as np
 import pytest
 
 from spin_optimal_control.valley import SiliconValleyModel
-from spin_optimal_control.drag import DRAGPulseSynthesizer
+from spin_optimal_control.pulse_shaping import AdiabaticCZDesigner, WINDOWS, conditional_phase, window
+from spin_optimal_control import SiliconSpinHamiltonian
 from spin_optimal_control.calibration import BayesianActiveCalibrator, simulate_drift_tracking
 from spin_optimal_control.awg_export import export_awg_waveforms
 from spin_optimal_control import __version__
@@ -55,25 +56,50 @@ def test_valley_initial_state_is_singlet_ground_valley():
 
 
 # ----------------------------------------------------------------------------- #
-# DRAG-style derivative corrections
+# Window-shaped adiabatic CZ
 # ----------------------------------------------------------------------------- #
-def test_drag_correction_vanishes_for_constant_pulse():
-    drag = DRAGPulseSynthesizer(delta_bz_mhz=15.0, drag_coefficient=0.5)
-    j = np.full(50, 20.0)
-    in_phase, quad = drag.apply_drag_correction(j, dt_ns=0.4)
-    assert np.allclose(in_phase, j)
-    assert np.allclose(quad, 0.0)
+@pytest.mark.parametrize("shape", WINDOWS)
+def test_window_is_unit_peak_and_calibrated_to_a_pi_phase(shape):
+    w = window(shape, 400)
+    assert w.max() <= 1.0 + 1e-12 and w.min() >= 0.0
+    cz = AdiabaticCZDesigner(SiliconSpinHamiltonian(delta_bz=20.0)).calibrate(shape, 100.0)
+    assert abs(abs(cz.conditional_phase) - np.pi) < 1e-9
+    assert abs(np.sum(cz.j_pulse) * cz.dt_ns - 500.0) < 1e-9
 
 
-def test_drag_quadrature_is_scaled_derivative():
-    drag = DRAGPulseSynthesizer(delta_bz_mhz=10.0, drag_coefficient=1.0)
-    t = np.linspace(0, 20, 81)
-    j = 30.0 * np.sin(np.pi * t / 20.0)
-    in_phase, quad = drag.apply_drag_correction(j, dt_ns=0.25)
-    expected = -np.gradient(j, 0.25) / 10.0
-    assert np.allclose(quad, expected)
-    assert np.all(in_phase >= 0.0)
-    assert len(in_phase) == len(quad) == 81
+def test_conditional_phase_depends_only_on_pulse_area():
+    """The (|↑↓⟩,|↓↑⟩) block is a phase times SU(2), so φ = −2π·1e-3·∫J dt for any shape and ΔBz."""
+    rng = np.random.default_rng(0)
+    from spin_optimal_control import ExchangeDynamics
+    for dbz in (0.0, 7.0, 40.0):
+        dyn = ExchangeDynamics(SiliconSpinHamiltonian(delta_bz=dbz))
+        j = np.abs(rng.normal(5.0, 3.0, size=80))
+        U = dyn.propagate_unitary(j, 0.7)
+        expected = np.angle(np.exp(-2j * np.pi * 1e-3 * np.sum(j) * 0.7))
+        assert abs(np.angle(np.exp(1j * (conditional_phase(U) - expected)))) < 1e-9
+
+
+def test_smooth_windows_suppress_nonadiabatic_leakage():
+    d = AdiabaticCZDesigner(SiliconSpinHamiltonian(delta_bz=20.0))
+    for T in (100.0, 200.0):
+        sq, cos = d.calibrate("square", T), d.calibrate("cosine", T)
+        assert cos.swap_leakage < sq.swap_leakage / 30
+        assert cos.infidelity < sq.infidelity / 30
+    # longer (more adiabatic) pulses are better for every smooth window
+    for s in ("cosine", "blackman"):
+        assert d.calibrate(s, 200.0).infidelity < d.calibrate(s, 100.0).infidelity < d.calibrate(s, 50.0).infidelity
+    # and a larger gap helps: adiabaticity is set by ΔBz·T
+    d60 = AdiabaticCZDesigner(SiliconSpinHamiltonian(delta_bz=60.0))
+    assert d60.calibrate("cosine", 100.0).infidelity < d.calibrate("cosine", 100.0).infidelity
+
+
+def test_cz_fidelity_matches_numerical_local_z_optimum():
+    from spin_optimal_control import ExchangeDynamics
+    d = AdiabaticCZDesigner(SiliconSpinHamiltonian(delta_bz=20.0))
+    cz = d.calibrate("square", 50.0)
+    U = d._unitary("square", 50.0, cz.j_max_mhz, 0.5)
+    f_pro, _ = ExchangeDynamics.gate_fidelity_local_z_free(U, ExchangeDynamics.target_gate_cz())
+    assert abs(cz.fidelity - (4 * f_pro + 1) / 5) < 1e-6
 
 
 # ----------------------------------------------------------------------------- #
@@ -106,17 +132,17 @@ def test_awg_export_formats(tmp_path, fmt):
     t = (np.arange(60) + 0.5) * 0.5
     j = 25.0 * np.sin(np.pi * t / 30.0)
     eps = np.log(np.maximum(j / 20.0, 1e-4))
-    quad = np.gradient(j, 0.5)
+    plunger = -0.3 * j
     ext = {"json": "json", "csv": "csv", "qblox": "json", "zi": "csv"}[fmt]
     path = tmp_path / f"pulse.{ext}"
-    data = export_awg_waveforms(t, j, eps, quad, sample_rate_gsps=2.0, export_format=fmt, file_path=str(path))
+    data = export_awg_waveforms(t, j, eps, {"plunger_comp_mv": plunger}, sample_rate_gsps=2.0, export_format=fmt, file_path=str(path))
     assert path.exists()
     assert data["metadata"]["num_samples"] == 60
     assert data["metadata"]["sample_rate_gsps"] == 2.0
     if fmt == "qblox":
         payload = json.loads(path.read_text())
         assert "waveforms" in payload
-        assert set(payload["waveforms"]) >= {"exchange_j_mhz", "detuning_eps_mv", "drag_quadrature"}
+        assert set(payload["waveforms"]) >= {"exchange_j_mhz", "detuning_eps_mv", "plunger_comp_mv"}
         assert payload["waveforms"]["exchange_j_mhz"]["index"] == 0
     if fmt in ("csv", "zi"):
         rows = list(csv.reader(path.open()))

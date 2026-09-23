@@ -4,7 +4,7 @@ Arbitrary-waveform-generator exporters.
 Waveforms are resampled to the instrument sample rate and written as
 
 * ``json``  – generic channel table with metadata,
-* ``csv``   – one row per sample (time, J, ε[, quadrature]),
+* ``csv``   – one row per sample (time, J, ε[, extra channels]),
 * ``qblox`` – Qblox Q1ASM-style ``{"waveforms": {name: {"data": [...], "index": i}}}``,
 * ``zi``    – Zurich Instruments CSV (header row + one column per channel).
 """
@@ -24,14 +24,16 @@ def export_awg_waveforms(
     time_grid: np.ndarray,
     j_pulse: np.ndarray,
     detuning_pulse: np.ndarray,
-    quadrature_drag: Optional[np.ndarray] = None,
+    extra_channels: Optional[Dict[str, np.ndarray]] = None,
     sample_rate_gsps: float = 1.0,
     export_format: str = "json",
     file_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Resample the waveforms to ``sample_rate_gsps`` (GSa/s) and optionally write
-    them in ``export_format``. Returns the resampled data in all cases.
+    them in ``export_format``. ``extra_channels`` maps further channel names
+    (e.g. a compensating plunger-gate waveform) to arrays on ``time_grid``.
+    Returns the resampled data in all cases.
     """
     fmt = export_format.lower()
     if fmt not in SUPPORTED_FORMATS:
@@ -47,14 +49,13 @@ def export_awg_waveforms(
 
     j_res = np.interp(t_res, t, np.asarray(j_pulse, dtype=float))
     eps_res = np.interp(t_res, t, np.asarray(detuning_pulse, dtype=float))
-    q_res = None if quadrature_drag is None else np.interp(t_res, t, np.asarray(quadrature_drag, dtype=float))
 
     channels: Dict[str, list] = {
         "exchange_j_mhz": [float(x) for x in np.round(j_res, 6)],
         "detuning_eps_mv": [float(x) for x in np.round(eps_res, 6)],
     }
-    if q_res is not None:
-        channels["drag_quadrature"] = [float(x) for x in np.round(q_res, 6)]
+    for name, wave in (extra_channels or {}).items():
+        channels[str(name)] = [float(x) for x in np.round(np.interp(t_res, t, np.asarray(wave, dtype=float)), 6)]
 
     data: Dict[str, Any] = {
         "metadata": {

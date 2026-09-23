@@ -1,6 +1,7 @@
 """
-End-to-end benchmark: GRAPE synthesis → noise Monte-Carlo → Lindblad channel
-fidelity → two-qubit Clifford IRB → valley leakage. Also exposed as
+End-to-end benchmark: GRAPE synthesis → window-shaped adiabatic CZ → noise
+Monte-Carlo → Lindblad channel fidelity → toggle-frame filter function vs
+Monte-Carlo → native-gate Clifford RB → valley leakage. Also exposed as
 ``spin-control benchmark``.
 """
 
@@ -52,6 +53,19 @@ def run_full_benchmark(as_json: bool = False, quick: bool = False) -> int:
     say(f"   -> {time.time() - t0:.2f} s | F = {res_cz.gate_fidelity*100:.5f}% | virtual-Z = {np.round(res_cz.virtual_z, 3).tolist()}")
     out["cz"] = {"fidelity": res_cz.gate_fidelity, "virtual_z": res_cz.virtual_z.tolist()}
 
+    # 2b. Window-shaped adiabatic CZ
+    from .pulse_shaping import AdiabaticCZDesigner, WINDOWS
+    say("\n2b. Window-shaped CZ, ΔBz = 20 MHz (pulse area 500 MHz·ns; infidelity up to local Z)")
+    designer = AdiabaticCZDesigner(SiliconSpinHamiltonian(delta_bz=20.0), n_steps=400)
+    durations = (50.0, 100.0, 200.0)
+    say("   window    " + "".join(f"{T:>10.0f} ns" for T in durations))
+    shaped = {}
+    for w in WINDOWS:
+        row = [designer.calibrate(w, T).infidelity for T in durations]
+        shaped[w] = row
+        say(f"   {w:9s} " + "".join(f"{v:>13.1e}" for v in row))
+    out["shaped_cz"] = shaped
+
     # 3. Noise Monte-Carlo on the √SWAP pulse
     say("\n3. Quasi-static 1/f charge noise + Overhauser Monte-Carlo (√SWAP pulse)")
     noise = SiliconNoiseModel(t1_us=800.0, t2_star_us=25.0, charge_noise_amp=0.04, overhauser_sigma=0.3, seed=42)
@@ -69,15 +83,52 @@ def run_full_benchmark(as_json: bool = False, quick: bool = False) -> int:
     say(f"   -> F_pro = {f_ch*100:.4f}%  (coherent limit {res.gate_fidelity*100:.4f}%)")
     out["lindblad"] = {"process_fidelity": f_ch}
 
+    # 4b. Toggle-frame filter function vs Monte-Carlo
+    import scipy.linalg
+    from .noise import exchange_gate_noise_operators, gate_filter_functions, infidelity_from_filter_function
+    from .units import MHZ_NS_TO_RAD
+    say("\n4b. Filter function in the toggle frame: OU frequency noise (σ = 0.3 MHz, τc = 5 ns) on one electron, cosine CZ 100 ns")
+    hz = SiliconSpinHamiltonian(delta_bz=20.0)
+    czp = AdiabaticCZDesigner(hz, n_steps=160).calibrate("cosine", 100.0)
+    Hs = [hz.get_hamiltonian_matrix(float(x)) for x in czp.j_pulse]
+    ops = exchange_gate_noise_operators(czp.j_pulse, "zeeman1")
+    om = np.concatenate([[0.0], np.logspace(-4, np.log10(np.pi / czp.dt_ns), 2500)])
+    sig, tc = 0.3, 5.0
+    pred = infidelity_from_filter_function(om, gate_filter_functions(Hs, czp.dt_ns, ops, om)[0], 2 * sig**2 * 2 * tc / (1 + (om * tc) ** 2))
+    steps = [scipy.linalg.expm(-1j * MHZ_NS_TO_RAD * H * czp.dt_ns) for H in Hs]
+    U0 = np.linalg.multi_dot(steps[::-1])
+    rng = np.random.default_rng(7); decay = np.exp(-czp.dt_ns / tc); vals = []
+    for _ in range(60 if quick else 200):
+        x = np.empty(len(Hs)); x[0] = rng.normal(0, sig)
+        for k in range(1, len(Hs)):
+            x[k] = decay * x[k - 1] + np.sqrt(1 - decay**2) * sig * rng.normal()
+        U = np.eye(4, dtype=complex)
+        for k in range(len(Hs)):
+            U = scipy.linalg.expm(-1j * MHZ_NS_TO_RAD * (Hs[k] + x[k] * ops[0][0]) * czp.dt_ns) @ U
+        vals.append(1 - abs(np.trace(U0.conj().T @ U)) ** 2 / 16)
+    say(f"   -> first-order prediction {pred:.3e} | Monte-Carlo {np.mean(vals):.3e} ± {np.std(vals)/np.sqrt(len(vals)):.1e}")
+    out["filter_function"] = {"prediction": pred, "monte_carlo": float(np.mean(vals))}
+
     # 5. Two-qubit Clifford IRB
     try:
         from .cirq_backend import run_interleaved_rb
-        say("\n5. Cirq two-qubit Clifford interleaved RB (11 520-element group)")
+        say("\n5. Clifford-level interleaved RB of the GRAPE √SWAP (11 520-element group, one ideal layer per Clifford)")
         t0 = time.time()
         rb = run_interleaved_rb(res.synthesized_unitary, [1, 2, 4, 8, 16, 32, 64],
                                 n_sequences_per_length=6 if quick else 12, noise_model=noise, seed=42)
         say(f"   -> {time.time() - t0:.1f} s | p_ref = {rb['decay_p_ref']:.5f} | p_int = {rb['decay_p_interleaved']:.5f} | gate error = {rb['gate_error']:.2e}")
         out["irb"] = {k: rb[k] for k in ("decay_p_ref", "decay_p_interleaved", "gate_error", "gate_fidelity")}
+        from .cirq_backend import CompiledCliffordRB, best_z_corrected_cz
+        say("\n5b. Native-gate Clifford RB: ±X/2, ±Y/2 (50 ns, p = 1e-3), virtual Z, cosine CZ (100 ns, ΔBz = 20 MHz), T1 = 1 ms, T2* = 20 µs")
+        U_cz = best_z_corrected_cz(ExchangeDynamics(hz).propagate_unitary(czp.j_pulse, czp.dt_ns))
+        nm = SiliconNoiseModel(t1_us=1000.0, t2_star_us=20.0, charge_noise_amp=0.0, overhauser_sigma=0.0)
+        crb = CompiledCliffordRB(nm, t_pulse_ns=50.0, t_cz_ns=100.0, p_pulse=1e-3, cz_unitary=U_cz)
+        t0 = time.time()
+        ref = crb.run([1, 4, 8, 16, 32, 64], n_sequences=15 if quick else 40, seed=5)
+        irb = crb.run_interleaved_cz([1, 4, 8, 16, 32, 64], n_sequences=15 if quick else 40, seed=6)
+        say(f"   -> {time.time() - t0:.1f} s | {ref['mean_cz_per_clifford']:.2f} CZ and {ref['mean_pulse_layers_per_clifford']:.2f} pulse layers per Clifford "
+            f"({ref['mean_clifford_duration_ns']:.0f} ns) | error per Clifford {ref['clifford_error']:.2e} | IRB CZ error {irb['cz_error']:.2e}")
+        out["compiled_rb"] = {"clifford_error": ref["clifford_error"], "cz_error": irb["cz_error"], **{k: ref[k] for k in ("mean_cz_per_clifford", "mean_clifford_duration_ns")}}
     except ImportError:
         say("\n5. Cirq not installed — skipping RB")
 

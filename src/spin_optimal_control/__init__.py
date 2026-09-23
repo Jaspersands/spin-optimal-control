@@ -30,7 +30,7 @@ from .cirq_backend import (
     clifford_error_from_p,
 )
 from .valley import SiliconValleyModel
-from .drag import DRAGPulseSynthesizer
+from .pulse_shaping import AdiabaticCZDesigner, ShapedCZ, window, conditional_phase, swap_leakage
 from .calibration import BayesianActiveCalibrator, CalibrationState, simulate_drift_tracking
 from .awg_export import export_awg_waveforms
 
@@ -58,7 +58,11 @@ __all__ = [
     "rb_fit",
     "clifford_error_from_p",
     "SiliconValleyModel",
-    "DRAGPulseSynthesizer",
+    "AdiabaticCZDesigner",
+    "ShapedCZ",
+    "window",
+    "conditional_phase",
+    "swap_leakage",
     "BayesianActiveCalibrator",
     "CalibrationState",
     "simulate_drift_tracking",
