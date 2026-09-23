@@ -7,7 +7,7 @@ Pulse design and noise analysis for exchange gates in silicon double quantum dot
 
 The package optimises exchange pulses with JAX, then asks how those pulses behave under the noise that matters in silicon: 1/f charge noise, nuclear-field fluctuations, relaxation and dephasing at finite temperature, and valley leakage. It also covers smooth pulse windows that make a CZ adiabatic, filter functions computed in the frame of the gate, and two-qubit randomized benchmarking with every Clifford compiled to native pulses.
 
-[Interactive page](web/index.html): the same calculations in the browser, with optimisation in a background worker.
+[Interactive page](https://spin.jaspersands.com/): the same calculations in the browser, with optimisation in a background worker.
 
 ## Model
 
