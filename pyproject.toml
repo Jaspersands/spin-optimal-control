@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spin-optimal-control"
-version = "0.4.0"
-description = "Differentiable optimal control for silicon spin exchange gates: JAX GRAPE, 1/f charge noise, Lindblad, toggle-frame filter functions, native-gate two-qubit Clifford RB in Cirq, adiabatic CZ pulse shaping, valley leakage, AWG export"
+version = "0.5.0"
+description = "Differentiable optimal control for silicon spin exchange gates: JAX GRAPE, 1/f charge noise, Lindblad, toggle-frame filter functions, CZ error budgets compared with published devices, native-gate two-qubit Clifford RB in Cirq, adiabatic CZ pulse shaping, valley leakage, AWG export"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -34,6 +34,12 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+spin_optimal_control = ["data/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "slow: takes more than a few seconds (gate-time optimisation, GRAPE); deselect with -m \"not slow\"",
+]

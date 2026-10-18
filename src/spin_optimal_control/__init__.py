@@ -4,8 +4,8 @@ spin_optimal_control
 Optimal control of exchange gates in silicon double quantum dots: JAX pulse
 optimisation, adiabatic CZ pulse shapes, 1/f charge and nuclear-field noise,
 thermal Lindblad decoherence, toggle-frame filter functions, native-gate
-Clifford randomized benchmarking in Cirq, valley leakage, drift tracking and
-AWG export.
+Clifford randomized benchmarking in Cirq, valley leakage, drift tracking,
+AWG export, and CZ error budgets compared with published silicon devices.
 
 Units: frequencies in MHz, times in ns (see :mod:`spin_optimal_control.units`).
 """
@@ -38,10 +38,20 @@ from .cirq_backend import (
 )
 from .valley import SiliconValleyModel
 from .pulse_shaping import AdiabaticCZDesigner, ShapedCZ, window, conditional_phase, swap_leakage
-from .calibration import BayesianActiveCalibrator, CalibrationState, simulate_drift_tracking
+from .calibration import BayesianActiveCalibrator, CalibrationState, recalibration_interval, simulate_drift_tracking
 from .awg_export import export_awg_waveforms
+from .error_budget import (
+    CZNoiseParameters,
+    CZErrorBudget,
+    cz_error_budget,
+    cz_error_budget_for_pulse,
+    combined_simulation,
+    sweep_gate_time,
+    optimal_gate_time,
+)
+from .devices import Device, load_devices, comparison_table
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __all__ = [
     "MHZ_NS_TO_RAD",
     "UEV_TO_MHZ",
@@ -79,5 +89,16 @@ __all__ = [
     "BayesianActiveCalibrator",
     "CalibrationState",
     "simulate_drift_tracking",
+    "recalibration_interval",
     "export_awg_waveforms",
+    "CZNoiseParameters",
+    "CZErrorBudget",
+    "cz_error_budget",
+    "cz_error_budget_for_pulse",
+    "combined_simulation",
+    "sweep_gate_time",
+    "optimal_gate_time",
+    "Device",
+    "load_devices",
+    "comparison_table",
 ]

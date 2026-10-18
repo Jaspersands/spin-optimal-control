@@ -12,14 +12,14 @@ import pytest
 from spin_optimal_control.valley import SiliconValleyModel
 from spin_optimal_control.pulse_shaping import AdiabaticCZDesigner, WINDOWS, conditional_phase, window
 from spin_optimal_control import SiliconSpinHamiltonian
-from spin_optimal_control.calibration import BayesianActiveCalibrator, simulate_drift_tracking
+from spin_optimal_control.calibration import BayesianActiveCalibrator, recalibration_interval, simulate_drift_tracking
 from spin_optimal_control.awg_export import export_awg_waveforms
 from spin_optimal_control import __version__
 from spin_optimal_control.cli import main as cli_main
 
 
 def test_version():
-    assert __version__ == "0.4.0"
+    assert __version__ == "0.5.0"
 
 
 # ----------------------------------------------------------------------------- #
@@ -122,6 +122,61 @@ def test_drift_tracking_beats_static_estimate():
     res = simulate_drift_tracking(n_steps=200, drift_rate_per_step=0.05, measurement_std_mhz=0.3, seed=5)
     assert res["rms_error_tracked"] < res["rms_error_static"]
     assert res["truth_delta_bz"].shape == (200,)
+
+
+def test_kalman_adds_the_drift_once_per_interval():
+    """One prediction per interval: the posterior variance converges to the scalar Riccati fixed point."""
+    Q, R = 0.04, 0.25
+    cal = BayesianActiveCalibrator(initial_j0=10.0, prior_std_j0=1.0, seed=0)
+    cal.Q = np.diag([Q, Q])
+    for _ in range(200):
+        cal.predict()
+        cal.update_from_exchange_oscillation(10.0, np.sqrt(R), predict=False)
+    assert cal.P[0, 0] == pytest.approx((-Q + np.sqrt(Q**2 + 4 * Q * R)) / 2, rel=1e-9)
+
+
+def test_recalibration_interval_matches_the_closed_form():
+    """
+    In steady state the mean excess error over an interval is c·(e₀² + drift²/2), where e₀² is the
+    measurement variance R for plain recalibration and the Riccati posterior for the Kalman tracker.
+    Xue 2022 inputs; the frequency term counts twice for independent qubit drift.
+    """
+    base, t_ns, j_on = 1.3545e-4, 100.0, 10.06
+    dj, db, mj, mb = 0.01, 0.02, 0.02, 0.005
+    iv = np.array([0.05, 2.53])
+    r = recalibration_interval(base, t_ns, j_on, drift_j_rel_per_sqrt_h=dj, drift_dez_mhz_per_sqrt_h=db,
+                               meas_std_j_rel=mj, meas_std_dez_mhz=mb, intervals_h=iv, n_runs=200, seed=3)
+    c_j = 0.8 * np.pi**2 / 16
+    c_b = 2 * 0.8 * (2 * np.pi * 1e-3 * t_ns) ** 2 / 8
+
+    def posterior(Q, R):
+        return (-Q + np.sqrt(Q**2 + 4 * Q * R)) / 2
+
+    for i, dt in enumerate(iv):
+        Qj, Qb, Rj, Rb = dj**2 * dt, db**2 * dt, mj**2, mb**2
+        plain = c_j * (Rj + Qj / 2) + c_b * (Rb + Qb / 2)
+        kalman = c_j * (posterior(Qj, Rj) + Qj / 2) + c_b * (posterior(Qb, Rb) + Qb / 2)
+        assert r["infidelity_plain"][i] - base == pytest.approx(plain, rel=0.05), dt
+        assert r["infidelity_kalman"][i] - base == pytest.approx(kalman, rel=0.06), dt
+    # the assumed 2 % J calibration error alone exceeds the drift-free gate error
+    assert c_j * mj**2 > base
+
+
+def test_recalibration_interval_limits():
+    """Short intervals reach the measurement-noise floor, long ones the drift; tracking never hurts."""
+    base = 1e-4
+    r = recalibration_interval(base, 100.0, 10.0, target_fidelity=0.9995, drift_j_rel_per_sqrt_h=0.01,
+                               drift_dez_mhz_per_sqrt_h=0.02, meas_std_j_rel=0.02, meas_std_dez_mhz=0.005,
+                               intervals_h=np.geomspace(0.01, 48.0, 12), n_runs=30, seed=2)
+    plain, kalman = r["infidelity_plain"], r["infidelity_kalman"]
+    assert plain[0] == pytest.approx(r["floor_plain"], rel=0.25)
+    assert np.all(kalman <= plain * 1.02) and kalman[0] < 0.5 * plain[0]
+    assert plain[-1] > 1 - r["target_fidelity"] > base
+    assert r["interval_kalman_h"] >= r["interval_plain_h"] > 0
+    # without measurement noise there is nothing to filter
+    q = recalibration_interval(base, 100.0, 10.0, meas_std_j_rel=1e-6, meas_std_dez_mhz=1e-6,
+                               intervals_h=np.array([0.5, 4.0]), n_runs=20, seed=2)
+    assert q["infidelity_kalman"] == pytest.approx(q["infidelity_plain"], rel=1e-3)
 
 
 # ----------------------------------------------------------------------------- #

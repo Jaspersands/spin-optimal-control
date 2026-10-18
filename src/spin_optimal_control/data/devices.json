@@ -1,0 +1,623 @@
+{
+  "schema": 1,
+  "notes": "Parameters of published silicon two-qubit devices. Units are in the parameter names. 'assumed': false means the number is printed in the cited version of the paper ('values_from'). 'assumed': true entries carry a 'basis' (derived from reported numbers, assumed typical value, lower bound or upper bound) and a one-line 'reason'. Per-qubit values are [Q1, Q2].",
+  "defaults": {
+    "ramsey_averaging_s": {
+      "value": 100.0,
+      "source": "package default",
+      "assumed": true,
+      "basis": "assumed",
+      "reason": "Ramsey averaging time not reported. It sets the low cut-off of the 1/f^alpha spectrum that is pinned to the quasi-static width: for alpha = 1 only through a logarithm, but where alpha is fitted it moves the fitted exponent (Mills Q2 1.63 to 1.37, Tanttu 1.23 to 1.12, for 10 s to 1 h) while the CZ totals change by less than 0.4%."
+    },
+    "zeeman_alpha": {
+      "value": 1.0,
+      "source": "package default",
+      "assumed": true,
+      "basis": "assumed",
+      "reason": "Used only for qubits without a reported echo time; otherwise the exponent is fitted per qubit to T2* and the Hahn-echo time."
+    },
+    "exchange_alpha": {
+      "value": 1.0,
+      "source": "package default",
+      "assumed": true,
+      "basis": "assumed",
+      "reason": "1/f spectrum for delta J / J above the Ramsey band; no paper here gives an exchange-noise spectrum to fit."
+    }
+  },
+  "devices": {
+    "xue2022": {
+      "label": "Xue 2022 (Delft, Si/SiGe)",
+      "short": "Xue 2022 (Delft)",
+      "citation": "X. Xue, M. Russ, N. Samkharadze, B. Undseth, A. Sammak, G. Scappucci, L. M. K. Vandersypen, Quantum logic with spin qubits crossing the surface code threshold, Nature 601, 343 (2022)",
+      "arxiv": "2107.00628",
+      "arxiv_title": "Computing with spin qubits at the surface code error threshold",
+      "doi": "10.1038/s41586-021-04273-w",
+      "values_from": "published version (Nature 601, 343, Methods and Extended Data), checked against arXiv:2107.00628v1",
+      "platform": "28Si/SiGe, micromagnet, barrier-controlled exchange",
+      "gate": "CZ",
+      "not_reported": [
+        "T1",
+        "Hahn or CPMG echo time",
+        "electron temperature",
+        "charge-noise spectrum (only quasi-static delta v_B)",
+        "29Si enrichment"
+      ],
+      "params": {
+        "f_q1_ghz": {
+          "value": 11.993,
+          "source": "Xue 2022, main text, device paragraph (field of ~320 mT splits the qubits to 11.993 GHz and 11.890 GHz)",
+          "assumed": false
+        },
+        "f_q2_ghz": {
+          "value": 11.89,
+          "source": "Xue 2022, main text, device paragraph",
+          "assumed": false
+        },
+        "delta_ez_mhz": {
+          "value": 103.0,
+          "source": "Xue 2022, main text, device paragraph",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "f_Q1 - f_Q2; Methods define dEz but give no number."
+        },
+        "b_field_t": {
+          "value": 0.32,
+          "source": "Xue 2022, main text, device paragraph (~320 mT)",
+          "assumed": false
+        },
+        "j_on_mhz": {
+          "value": 10.06,
+          "source": "Xue 2022, Methods, 'CZ gate' (A_vB J_res = 10.06 MHz for t_p = 100 ns)",
+          "assumed": false
+        },
+        "j_residual_khz": {
+          "value": 58.8,
+          "uncertainty": 1.8,
+          "source": "Xue 2022, Methods, 'Fitting qubit frequencies and dephasing times'",
+          "assumed": false
+        },
+        "j_max_shown_mhz": {
+          "value": 20.0,
+          "source": "Xue 2022, main text (exchange tunable from < 100 kHz to 20 MHz)",
+          "assumed": false
+        },
+        "gate_time_ns": {
+          "value": 100.0,
+          "source": "Xue 2022, Methods, 'Gate calibration' (I and CZ durations set to 100 ns)",
+          "assumed": false
+        },
+        "pulse": {
+          "value": "cosine (Hann) window in J, W(t) = [1 - cos(2 pi t / t_p)]/2, barrier pulse v_B(t) = log(A W(t)) / 2 alpha",
+          "source": "Xue 2022, Methods, Eqs. 20-21",
+          "assumed": false
+        },
+        "model_shape": {
+          "value": "cosine",
+          "source": "Xue 2022, Methods, Eq. 20",
+          "assumed": false
+        },
+        "exchange_alpha_per_v": {
+          "value": 12.1,
+          "uncertainty": 0.05,
+          "source": "Xue 2022, Methods, Eq. 3, J(v_B) = J_res exp(2 alpha v_B), fit values",
+          "assumed": false
+        },
+        "barrier_noise_mv": {
+          "value": 0.4,
+          "uncertainty": 0.01,
+          "source": "Xue 2022, Methods, 'Fitting qubit frequencies and dephasing times' (quasi-static delta v_B fitted to T2* in Fig. 3c)",
+          "assumed": false
+        },
+        "exchange_sigma_rel": {
+          "value": 0.00968,
+          "source": "Xue 2022, Methods (alpha and delta v_B)",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "delta J / J = 2 alpha delta v_B = 24.2 /V x 0.40 mV."
+        },
+        "zeeman_sigma_khz": {
+          "value": [
+            11.0,
+            24.0
+          ],
+          "uncertainty": [
+            0.1,
+            0.7
+          ],
+          "source": "Xue 2022, Methods, 'Fitting qubit frequencies and dephasing times' (delta f_Q1, delta f_Q2)",
+          "assumed": false
+        },
+        "t2_star_us": {
+          "value": [
+            20.5,
+            9.4
+          ],
+          "source": "Xue 2022, Methods, Eq. 8 with delta f_Q1, delta f_Q2; consistent with Fig. 3c at zero barrier amplitude",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "T2* = 1/(sqrt(2) pi delta f); the paper plots T2* but prints no value."
+        },
+        "ramsey_averaging_s": {
+          "value": 480.0,
+          "source": "Xue 2022, Fig. 3 caption (each data point averaged for about 8 min)",
+          "assumed": false
+        },
+        "t1_us": {
+          "value": [
+            10000.0,
+            10000.0
+          ],
+          "source": "not reported in Xue 2022",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Not reported here or in ref. 17 (Xue 2021); 10 ms is typical for Si/SiGe qubits and contributes < 1e-5 at 100 ns."
+        },
+        "electron_temperature_mk": {
+          "value": 55.0,
+          "source": "not reported in Xue 2022",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Not reported; Xue et al., Nature 593, 205 (2021), the similar device of its ref. 17, shows 54-58 mK (Extended Data Fig. 8). Irrelevant while T1 >> gate time."
+        },
+        "measured_fidelity": {
+          "value": 0.9965,
+          "uncertainty": 0.0015,
+          "method": "GST",
+          "source": "Xue 2022, main text and Extended Data Table 1 (1 - F_gate = 0.0035 +/- 0.0015, 2 sigma)",
+          "assumed": false
+        },
+        "reported_error_budget": {
+          "value": "GST error generator of the CZ: stochastic epsilon_J = 0.0042, coherent theta_J = 0.016, i.e. about 0.0034 stochastic and 0.0002 coherent in the average infidelity (Eq. 26); 'incoherent errors dominate'. Simulated 1 - F = 0.22e-3 with the fitted delta f and delta v_B; the authors attribute the gap to barrier-voltage drift on longer timescales.",
+          "source": "Xue 2022, Extended Data Table 1, Methods 'CZ gate' and 'Gate set tomography'",
+          "assumed": false
+        },
+        "authors_simulated_infidelity": {
+          "value": 0.00022,
+          "source": "Xue 2022, Methods, 'CZ gate' (average gate infidelity 1 - F = 0.22e-3 with noise, < 1e-6 without). Their simulation takes delta f_Q1, delta f_Q2 as quasi-static and delta v_B as 1/f noise, and includes the barrier-voltage dependence of the qubit frequencies (beta_1, beta_2), which this model leaves out",
+          "assumed": false
+        },
+        "recalibration_interval_h": {
+          "value": 2.0,
+          "source": "Xue 2022, Methods, 'Gate calibration' (qubit frequencies recalibrated by Ramsey sequences every 2 h, at the start and in the middle of the GST run)",
+          "assumed": false
+        },
+        "drift_j_rel_per_sqrt_h": {
+          "value": 0.01,
+          "source": "not reported in Xue 2022; used only by the recalibration estimate",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Random-walk rate of J; the same size as the quasi-static dJ/J = 0.97% fitted over 8-minute averages. The authors attribute their excess error to slower barrier drift but give no rate."
+        },
+        "drift_dez_mhz_per_sqrt_h": {
+          "value": 0.02,
+          "source": "not reported in Xue 2022; used only by the recalibration estimate",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Random-walk rate of the frequency difference; of the order of the 11 and 24 kHz quasi-static widths fitted over 8-minute averages. With independent qubit drift (the default) each qubit frequency walks at 1/sqrt(2) of this, about 14 kHz/sqrt(h)."
+        },
+        "calibration_std_j_rel": {
+          "value": 0.02,
+          "source": "not reported in Xue 2022; used only by the recalibration estimate",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Relative error of J from one exchange-oscillation (conditional-phase) fit; typical for a few hundred shots per point."
+        },
+        "calibration_std_dez_mhz": {
+          "value": 0.005,
+          "source": "not reported in Xue 2022; used only by the recalibration estimate",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Error of the frequency difference from the Ramsey fits, a few kHz for T2* = 10-20 us. With independent qubit drift (the default) each qubit frequency is taken to be measured to 1/sqrt(2) of this, about 3.5 kHz."
+        }
+      }
+    },
+    "noiri2022": {
+      "label": "Noiri 2022 (RIKEN, Si/SiGe)",
+      "short": "Noiri 2022 (RIKEN)",
+      "citation": "A. Noiri, K. Takeda, T. Nakajima, T. Kobayashi, A. Sammak, G. Scappucci, S. Tarucha, Fast universal quantum gate above the fault-tolerance threshold in silicon, Nature 601, 338 (2022)",
+      "arxiv": "2108.02626",
+      "arxiv_title": "Fast universal quantum control above the fault-tolerance threshold in silicon",
+      "doi": "10.1038/s41586-021-04182-y",
+      "values_from": "arXiv:2108.02626v2 (main text, Methods and Extended Data); not compared with the published version",
+      "platform": "28Si/SiGe (800 ppm 29Si), micromagnet, exchange always on",
+      "gate": "CNOT from two CROT pulses",
+      "not_reported": [
+        "CZ gate (the two-qubit gate is a CROT-based CNOT)",
+        "exchange-noise amplitude",
+        "charge-noise spectrum",
+        "T2 CPMG",
+        "individual qubit frequencies"
+      ],
+      "params": {
+        "mean_zeeman_ghz": {
+          "value": 15.7,
+          "source": "Noiri 2022, main text, Hamiltonian paragraph (average E_Z ~ 15700 MHz at B_ext = 0.408 T)",
+          "assumed": false
+        },
+        "delta_ez_mhz": {
+          "value": 300.0,
+          "source": "Noiri 2022, main text, Hamiltonian paragraph (dE_Z ~ 300 MHz from the micromagnet)",
+          "assumed": false
+        },
+        "b_field_t": {
+          "value": 0.408,
+          "source": "Noiri 2022, main text, Hamiltonian paragraph",
+          "assumed": false
+        },
+        "j_on_mhz": {
+          "value": 18.85,
+          "source": "Noiri 2022, main text (J = 18.85 MHz, f_R = 4.867 MHz) and Extended Data Fig. 6a",
+          "assumed": false
+        },
+        "j_max_shown_mhz": {
+          "value": 32.0,
+          "source": "Noiri 2022, Extended Data Fig. 3d caption ('a fixed J of 32.0 MHz', the largest printed operating point)",
+          "assumed": false
+        },
+        "gate_time_ns": {
+          "value": 103.0,
+          "source": "Noiri 2022, main text (CNOT in 103 ns, two pi/2 CROT pulses)",
+          "assumed": false
+        },
+        "pulse": {
+          "value": "resonantly driven CROT under always-on exchange, synchronised so that f_R = J / sqrt(15); no exchange pulse",
+          "source": "Noiri 2022, Methods, 'Theoretical description of controlled-rotation'",
+          "assumed": false
+        },
+        "model_shape": {
+          "value": "cosine",
+          "source": "package choice",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "The measured gate is not an exchange-pulsed CZ; the model asks what a cosine CZ of the same duration would give in this noise environment."
+        },
+        "t2_star_us": {
+          "value": [
+            7.05,
+            7.3
+          ],
+          "source": "Noiri 2022, Extended Data Fig. 2f (Q1: 7.4 and 6.7 us, Q2: 6.6 and 8.0 us, depending on the other qubit; 87 s integration)",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "Mean of the two values conditional on the other qubit's state."
+        },
+        "ramsey_averaging_s": {
+          "value": 87.0,
+          "source": "Noiri 2022, Extended Data Fig. 2f caption (87 s integration)",
+          "assumed": false
+        },
+        "t2_hahn_us": {
+          "value": [
+            31.55,
+            29.65
+          ],
+          "source": "Noiri 2022, Extended Data Fig. 2i (Q1: 32.0 and 31.1 us, Q2: 27.6 and 31.7 us; decay exponents 1.2-1.8)",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "Mean of the two values conditional on the other qubit's state."
+        },
+        "t1_us": {
+          "value": [
+            10000.0,
+            10000.0
+          ],
+          "source": "Noiri 2022, main text ('much longer than the maximum operation time of 100 us', Extended Data Fig. 2c)",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Not quantified in the text; 10 ms assumed. Relaxation contributes about 1e-5 at 103 ns with this value."
+        },
+        "exchange_sigma_rel": {
+          "value": 0.0034,
+          "source": "Noiri 2022, Extended Data Fig. 5a caption ('Single-qubit frequency noises (Delta f1 and Delta f2) are larger than that of the exchange noise Delta J/2') and main text (T2* 'mostly limited by single-qubit frequency noise')",
+          "assumed": true,
+          "basis": "upper bound",
+          "reason": "Delta J/2 < Delta f, with Delta f at most the conditional Ramsey width sqrt(2)/(2 pi T2*) = 31.9 kHz for Q1 (T2* = 7.05 us), gives Delta J < 64 kHz, i.e. delta J/J < 0.34% at J = 18.85 MHz; this bound is used. It is not tight: if the conditional width is the quadrature sum of Delta f and Delta J/2, the same statement gives Delta J < sqrt(2) x 31.9 kHz, i.e. 0.24%."
+        },
+        "electron_temperature_mk": {
+          "value": 60.0,
+          "source": "Noiri 2022, Methods, 'Measurement setup' (electron temperature ~60 mK)",
+          "assumed": false
+        },
+        "measured_fidelity": {
+          "value": 0.9951,
+          "uncertainty": 0.0002,
+          "method": "interleaved RB, CNOT",
+          "source": "Noiri 2022, main text and Fig. 2g",
+          "assumed": false
+        },
+        "reported_error_budget": {
+          "value": "Simulated randomized benchmarking with quasi-static noise taken from measured Delta J, Delta f1 and Delta f2 traces (10,000 cycles of 1.706 s): about 0.1% infidelity per two-qubit primitive gate (two pi/2 CROT pulses, as in the CNOT) around f_R = 4-5 MHz; 'the infidelity due to dephasing is only 0.1%'. 'The remaining infidelity could originate from pulse calibration errors and long-term fluctuations in the device condition.'",
+          "source": "Noiri 2022, main text (Fig. 3 discussion), Methods ('Simulation of two-qubit gate infidelity by quasi-static noise in resonance frequencies', and the noise-measurement paragraph) and Extended Data Fig. 5b",
+          "assumed": false
+        }
+      }
+    },
+    "mills2022": {
+      "label": "Mills 2022 (Princeton, Si/SiGe)",
+      "short": "Mills 2022 (Princeton)",
+      "citation": "A. R. Mills, C. R. Guinn, M. J. Gullans, A. J. Sigillito, M. M. Feldman, E. Nielsen, J. R. Petta, Two-qubit silicon quantum processor with operation fidelity exceeding 99%, Science Advances 8, eabn5130 (2022)",
+      "arxiv": "2111.11937",
+      "arxiv_title": "Two-qubit silicon quantum processor with operation fidelity exceeding 99%",
+      "doi": "10.1126/sciadv.abn5130",
+      "values_from": "published version (Science Advances 8, eabn5130, PMC full text and Supplementary Materials); arXiv:2111.11937v1 gives J ~ 5 MHz instead of 12.5 MHz",
+      "platform": "28Si/SiGe (800 ppm 29Si), Co micromagnet, barrier-controlled exchange",
+      "gate": "CZ",
+      "not_reported": [
+        "charge-noise amplitude",
+        "dJ/dV or exchange lever arm",
+        "Ramsey averaging time",
+        "T2 CPMG"
+      ],
+      "params": {
+        "f_q1_ghz": {
+          "value": 18.247,
+          "source": "Mills 2022, Results, first paragraph",
+          "assumed": false
+        },
+        "f_q2_ghz": {
+          "value": 17.851,
+          "source": "Mills 2022, Results, first paragraph",
+          "assumed": false
+        },
+        "delta_ez_mhz": {
+          "value": 396.0,
+          "source": "Mills 2022, Results, first paragraph",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "f1 - f2; the paper states only dEz >> J."
+        },
+        "b_field_t": {
+          "value": 0.365,
+          "source": "Mills 2022, Results, first paragraph (B_E = 365 mT)",
+          "assumed": false
+        },
+        "j_on_mhz": {
+          "value": 12.5,
+          "source": "Mills 2022, Fig. 2B caption, published version (J ~ 12.5 MHz for 40 ns; arXiv v1 says ~5 MHz)",
+          "assumed": false
+        },
+        "j_max_shown_mhz": {
+          "value": 12.5,
+          "source": "Mills 2022, Fig. 2A (J(V_B2) spans about 0.025-12 MHz) and Fig. 2B caption",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "The exchange used for the CZ is taken as the ceiling. The model's Tukey window needs a 13.9 MHz peak to reach 500 MHz ns in 40 ns, so the model's own ceiling is that peak (Device.j_cap_mhz)."
+        },
+        "gate_time_ns": {
+          "value": 40.0,
+          "source": "Mills 2022, Fig. 2B caption and Supplementary Materials, 'Pulse shaping'",
+          "assumed": false
+        },
+        "pulse": {
+          "value": "40 ns square barrier pulse smoothed with a binomial filter to improve adiabaticity; virtual Z corrections",
+          "source": "Mills 2022, Supplementary Materials, 'Pulse shaping', Fig. S3",
+          "assumed": false
+        },
+        "model_shape": {
+          "value": "tukey",
+          "source": "Mills 2022, Supplementary Materials, 'Pulse shaping'",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "A Tukey window approximates a square pulse with smoothed edges."
+        },
+        "tukey_alpha": {
+          "value": 0.2,
+          "source": "Mills 2022, Supplementary Fig. S3",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Edges of a few ns are read from Fig. S3; alpha = 0.2 gives 4 ns cosine ramps on a 40 ns pulse."
+        },
+        "t2_star_us": {
+          "value": [
+            1.7,
+            2.3
+          ],
+          "source": "Mills 2022, Results, single-qubit GST paragraph (T2*(T2) = 1.7(23) us and 2.3(102) us)",
+          "assumed": false
+        },
+        "t2_hahn_us": {
+          "value": [
+            23.0,
+            102.0
+          ],
+          "source": "Mills 2022, Results, single-qubit GST paragraph (Hahn echo)",
+          "assumed": false
+        },
+        "t1_us": {
+          "value": [
+            24000.0,
+            18000.0
+          ],
+          "source": "Mills 2022, Supplementary Materials, 'Readout' (T1 = 24(18) ms for Q1(Q2))",
+          "assumed": false
+        },
+        "exchange_sigma_rel": {
+          "value": 0.00968,
+          "source": "Xue 2022, Methods (2 alpha delta v_B)",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Not reported; set to the Xue 2022 value for a barrier-controlled Si/SiGe double dot."
+        },
+        "electron_temperature_mk": {
+          "value": 45.0,
+          "source": "Mills 2022, Materials and Methods (T_e ~ 45 mK)",
+          "assumed": false
+        },
+        "measured_fidelity": {
+          "value": 0.9981,
+          "uncertainty": 0.0017,
+          "method": "interleaved RB",
+          "source": "Mills 2022, Results and Fig. 4 (F_CZ = 99.81 +/- 0.17%)",
+          "assumed": false
+        },
+        "reported_error_budget": {
+          "value": "No simulated budget. From RB, r_ref = 1.5 r_CZ + 8.25 r_SQ with r_CZ ~ 0.002. The authors suspect 'charge noise is one of the main limiting factors for the CZ gate', since it affects both the Z phases and the exchange amplitude, and attribute the short T2* to 'low-frequency charge noise coupling to the magnetic field gradient'.",
+          "source": "Mills 2022, Results (RB paragraph) and Discussion",
+          "assumed": false
+        }
+      }
+    },
+    "tanttu2024": {
+      "label": "Tanttu 2024 (UNSW/Diraq, SiMOS), device A",
+      "short": "Tanttu 2024 (UNSW/Diraq), device A",
+      "citation": "T. Tanttu, W. H. Lim, J. Y. Huang, N. Dumoulin Stuyck, W. Gilbert, R. Y. Su, M. Feng, J. D. Cifuentes, A. E. Seedhouse, S. K. Seritan, C. I. Ostrove, K. M. Rudinger, R. C. C. Leon, W. Huang, C. C. Escott, K. M. Itoh, N. V. Abrosimov, H.-J. Pohl, M. L. W. Thewalt, F. E. Hudson, R. Blume-Kohout, S. D. Bartlett, A. Morello, A. Laucht, C. H. Yang, A. Saraiva, A. S. Dzurak, Assessment of the errors of high-fidelity two-qubit gates in silicon quantum dots, Nature Physics 20, 1804 (2024)",
+      "arxiv": "2303.04090",
+      "arxiv_title": "Assessment of error variation in high-fidelity two-qubit gates in silicon",
+      "doi": "10.1038/s41567-024-02614-w",
+      "values_from": "arXiv:2303.04090v3 (Extended Data Tables 2 and 3 there; in the published version the device parameters are Extended Data Table 1). The published main text gives 98.4% for the device-A CZ.",
+      "platform": "SiMOS, 28Si (800 ppm 29Si), no micromagnet (g-factor difference), J-gate controlled exchange",
+      "gate": "CZ",
+      "not_reported": [
+        "T1",
+        "electron temperature",
+        "charge-noise or exchange-noise amplitude",
+        "Ramsey averaging time",
+        "T2 CPMG"
+      ],
+      "params": {
+        "b_field_t": {
+          "value": 0.8274,
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A) (B0 = 0.8274 T along [100])",
+          "assumed": false
+        },
+        "mean_zeeman_ghz": {
+          "value": 23.16,
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A) (B0)",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "g mu_B B0 / h with g = 2; only enters the thermal population, which is negligible here."
+        },
+        "delta_ez_mhz": {
+          "value": 10.8,
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A)",
+          "assumed": false
+        },
+        "delta_ez_gate_mhz": {
+          "value": 11.555,
+          "source": "Tanttu 2024, Fig. 1g caption (Z corrections for the Stark shift of the J-gate pulse) and arXiv v3 Extended Data Table 2 (published: Extended Data Table 1), 'Feedbacks' row (V_CZ is fed back)",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Delta E_z during the 256 ns square pulse, set to the nearest value at which the pulse is synchronised (n = 3, T = sqrt(n^2 - 1/4)/Delta E_z). At the idle 10.8 MHz the square pulse would leave a SWAP-like (XX + YY) error of 4e-3, which the paper's GST error channels do not show; the J-gate pulse Stark-shifts the qubits and V_CZ is fed back, so the idle value need not hold during the pulse."
+        },
+        "j_on_mhz": {
+          "value": 1.95,
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A) (exchange on 1950 kHz)",
+          "assumed": false
+        },
+        "j_off_hz": {
+          "value": 4.2,
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A) (exchange off 4.2 Hz)",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "Printed in the table, but far below what can be measured; consistent with extrapolating the 1950 kHz on-value down the 17.13 dec/V slope. Not used by the model."
+        },
+        "j_max_shown_mhz": {
+          "value": 1.95,
+          "source": "Tanttu 2024, main text (exchange-on point placed at the high end of the 400 mV pulse range) and arXiv v3 Extended Data Table 2 (published: Extended Data Table 1)",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "The exchange used for the CZ is taken as the ceiling; a larger J would need a different bias point, which is not reported."
+        },
+        "j_gate_slope_dec_per_v": {
+          "value": 17.13,
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A) (J-gate turn on 17.13 dec/V)",
+          "assumed": false
+        },
+        "gate_time_ns": {
+          "value": 256.0,
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A) (exchange time CZ 256 ns)",
+          "assumed": false
+        },
+        "pulse": {
+          "value": "square ramp of the exchange, on and off; virtual Z corrections for the Stark shift of the J-gate pulse; no decoupling (devices B and C use a decoupled DCZ instead)",
+          "source": "Tanttu 2024, Supplementary Information (gate set) and main text (CZ and DCZ strategies, Fig. 1g)",
+          "assumed": false
+        },
+        "model_shape": {
+          "value": "square",
+          "source": "Tanttu 2024, Supplementary Information ('square ramp of the exchange')",
+          "assumed": false
+        },
+        "t2_star_us": {
+          "value": [
+            5.5,
+            6.5
+          ],
+          "uncertainty": [
+            0.3,
+            0.3
+          ],
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A)",
+          "assumed": false
+        },
+        "t2_hahn_us": {
+          "value": [
+            51.0,
+            60.0
+          ],
+          "uncertainty": [
+            3.0,
+            3.0
+          ],
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A)",
+          "assumed": false
+        },
+        "t2_rabi_us": {
+          "value": [
+            55.0,
+            64.0
+          ],
+          "uncertainty": [
+            5.0,
+            5.0
+          ],
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A)",
+          "assumed": false
+        },
+        "t1_us": {
+          "value": [
+            10000.0,
+            10000.0
+          ],
+          "source": "not reported in Tanttu 2024",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "T1 not reported; 10 ms is a conservative value for SiMOS qubits near 23 GHz and contributes < 1e-4 at 256 ns."
+        },
+        "exchange_sigma_rel": {
+          "value": 0.0158,
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (17.13 dec/V) with Xue 2022, Methods (delta v_B = 0.40 mV)",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Exchange noise not reported; Xue 2022's quasi-static gate-voltage noise applied to this device's J-gate slope: ln(10) x 17.13 /V x 0.40 mV."
+        },
+        "electron_temperature_mk": {
+          "value": 100.0,
+          "source": "not reported in Tanttu 2024",
+          "assumed": true,
+          "basis": "assumed",
+          "reason": "Not reported; only splits T1 into decay and excitation, which is negligible at this gate time."
+        },
+        "measured_fidelity": {
+          "value": 0.9842,
+          "uncertainty": 0.0022,
+          "method": "interleaved RB",
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 3, device A: 'mean,std' row 98.42 +/- 0.01% over IRB1 (98.43 +/- 0.22%) and IRB2 (98.41 +/- 0.13%); the uncertainty here is the larger single-run error. The published main text gives 98.4%.",
+          "assumed": false
+        },
+        "measured_fidelity_gst": {
+          "value": 0.968,
+          "uncertainty": 0.002,
+          "method": "GST",
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 3 (GST A, CZ)",
+          "assumed": false
+        },
+        "reported_error_budget": {
+          "value": "GST of the CZ shows large stochastic and Hamiltonian IZ and ZI errors (quasi-static Larmor shifts and the Stark shift of the J-gate pulse), calibration errors, crosstalk and unexplained IY and XZ terms; contextual Larmor shifts after microwave pulses. The fidelity of device B's DCZ degrades over lab time between feedback updates. The decoupled DCZ of devices B and C suppresses the IZ and ZI errors and reaches 99.37% and 99.76% (IRB means).",
+          "source": "Tanttu 2024, main text (Multi-qubit physical errors, Figs. 2-4) and Extended Data Table 3",
+          "assumed": false
+        }
+      }
+    }
+  }
+}

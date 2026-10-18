@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0 — 2026-10-19
+
+A comparison of the modelled CZ with four published silicon devices.
+
+### Added
+- `data/devices.json`, shipped with the package: parameters of Xue 2022, Noiri 2022, Mills 2022 and Tanttu 2024 (device A). Every value has a source, and each device records which version of the paper its values were read from (`values_from`) and the title of its arXiv version (`arxiv_title`). Derived values, bounds and assumed values are flagged with a reason. For Tanttu 2024 the square pulse is modelled at the frequency difference where it is synchronised (11.555 MHz, assumed), and the coherent error it would have at the idle 10.8 MHz is reported separately. `devices` loads them (`load_devices`, `Device.noise_parameters`, `Device.budget`, `comparison_table`, `best_gate_times`).
+- `error_budget`: CZ infidelity split into the coherent error after virtual-Z correction, quasi-static and 1/f^α Zeeman noise, quasi-static and 1/f exchange noise (toggle-frame filter functions), and Markovian T₁ and white dephasing from the Lindblad equation. `combined_simulation` checks that the parts add up.
+- The Zeeman exponent α is fitted per qubit to T₂* and the Hahn-echo time (`fit_zeeman_alpha`, `echo_time_from_1f`, `psd_amplitude`, `white_dephasing_t2`), with α = 1 where no echo is reported. `CZNoiseParameters` takes `zeeman_alpha` (per qubit) and `exchange_alpha`.
+- `optimal_gate_time` enumerates the synchronised times T_n = √(n² − ¼)/ΔE_z of a square pulse and searches the other windows down to the shortest time the exchange ceiling allows; `coherent_error` and `square_sync_times` expose the pieces. `grape_cz_pulse` gives a GRAPE CZ for comparison.
+- `calibration.recalibration_interval` and `longest_interval`: how often a CZ must be recalibrated against random-walk drift of J₀ and the qubit frequencies (independent by default), with plain recalibration and with the Kalman tracker. `drift_rate_for_infidelity` sizes a J drift to a given excess error. The drift rates and calibration errors for Xue 2022 are assumed and flagged in `devices.json`.
+- `BayesianActiveCalibrator.predict()`, and a `predict` flag on its update methods, so that a caller can advance the drift once per interval and then apply several measurements.
+- `spin-control devices` (with `--budget`, `--optimum`, `--json`) prints the comparison table, the fitted exponents and per-device notes.
+- `benchmarks/make_figures.py` (`--out`, `--quick`) writes `figures/error_budget_vs_gate_time.png`, `figures/summary.png`, `figures/calibration_interval.png` and `figures/comparison.json`.
+- Notebook sections 11 and 12: the device comparison and the recalibration interval.
+
+### Changed
+- `pytest` registers a `slow` marker; deselect with `-m "not slow"`.
+- Tests: 79 → 132.
+
 ## 0.4.0 — 2026-09-23
 
 Changes from an adversarial review of 0.3.

@@ -8,6 +8,7 @@ shape      window-shaped adiabatic CZ: leakage and fidelity per window and durat
 valley     valley leakage of a half-sine pulse versus valley splitting
 rb         two-qubit Clifford randomized benchmarking on native gates under T1/T2*
 noise-psd  generate a 1/f trace and report its fitted spectral slope
+devices    measured two-qubit gate fidelity of published devices against the modelled CZ error budget
 benchmark  the full benchmark suite (same as ``python benchmarks/run_benchmarks.py``)
 
 Add ``--json`` to any command for machine-readable output.
@@ -40,7 +41,7 @@ TARGETS = {
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="spin-control",
-        description="Silicon spin exchange-gate optimal control (GRAPE / valley / RB / noise / AWG)",
+        description="Silicon spin exchange-gate optimal control (GRAPE / valley / RB / noise / device comparison / AWG)",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -90,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--dt", type=float, default=0.1, help="ns")
     n.add_argument("--seed", type=int, default=0)
     n.add_argument("--json", action="store_true")
+
+    d = sub.add_parser("devices", help="Published devices: measured gate fidelity against the CZ error budget")
+    d.add_argument("--budget", action="store_true", help="also print each contribution at the published gate time")
+    d.add_argument("--optimum", action="store_true", help="also find the best gate time for square and cosine pulses (slower)")
+    d.add_argument("--json", action="store_true")
 
     b = sub.add_parser("benchmark", help="Run the benchmark suite")
     b.add_argument("--json", action="store_true")
@@ -201,6 +207,43 @@ def cmd_noise_psd(args) -> int:
     return 0
 
 
+def cmd_devices(args) -> int:
+    from .devices import best_gate_times, comparison_table, format_comparison_table, load_devices
+    from .error_budget import LABELS
+    devs = load_devices()
+    rows = comparison_table(devs)
+    lines = ["Two-qubit gate fidelity: published measurement against the modelled CZ at the published gate time",
+             "(average gate fidelity). The model estimates the error from the noise each paper characterises, with",
+             "assumed values where it doesn't; it is not a bound in either direction. It has no crosstalk, drift, SPAM",
+             "or leakage.", "",
+             format_comparison_table(rows)]
+    if args.budget:
+        lines += ["", "Modelled contributions at the published gate time (average gate infidelity):",
+                  f"  {'device':42s}" + "".join(f"{LABELS[k]:>28s}" for k in rows[0]["contributions"])]
+        for r in rows:
+            lines.append(f"  {r['device']:42s}" + "".join(f"{v:>28.2e}" for v in r["contributions"].values()))
+    if args.optimum:
+        lines += ["", "Best modelled gate time per pulse shape:"]
+        for r in rows:
+            best = best_gate_times(devs[r["key"]])
+            r["optimum"] = {s: {"duration_ns": b.duration_ns, "fidelity": b.fidelity, "dominant": b.dominant} for s, b in best.items()}
+            lines.append(f"  {r['device']:42s} " + "   ".join(
+                f"{s}: {b.duration_ns:6.1f} ns, {100 * b.fidelity:.3f}%" for s, b in best.items()))
+    lines += ["", "Zeeman noise exponent alpha per qubit (fitted to T2* and the Hahn echo where one is reported):"]
+    for r in rows:
+        fits = devs[r["key"]].zeeman_fit()
+        lines.append(f"  {r['device']:42s} " + ", ".join(f"Q{q + 1} {f['alpha']:.2f} ({f['status']})" for q, f in enumerate(fits)))
+    notes = [f"  {r['device']}: measured gate is a {r['gate']}; the model is an exchange-pulsed CZ of the same duration"
+             for r in rows if r["gate"] != "CZ"]
+    notes += [f"  {r['device']}: modelled with the frequency difference at which the square pulse is synchronised; "
+              f"at the idle value its coherent error would be {r['coherent_at_idle_dez']:.1e}"
+              for r in rows if r.get("coherent_at_idle_dez") is not None]
+    if notes:
+        lines += [""] + notes
+    _emit({"devices": rows}, args.json, lines)
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -216,6 +259,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "valley": cmd_valley,
         "rb": cmd_rb,
         "noise-psd": cmd_noise_psd,
+        "devices": cmd_devices,
     }[args.command](args)
 
 
