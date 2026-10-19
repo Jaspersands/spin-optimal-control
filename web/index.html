@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Spin Exchange Control</title>
-<meta name="description" content="Optimal control of exchange gates in silicon double quantum dots, computed in the browser: exact two-electron propagation, pulse optimisation, 1/f noise, Lindblad decoherence, adiabatic CZ pulse shapes and Clifford randomized benchmarking." />
+<meta name="description" content="Optimal control of exchange gates in silicon double quantum dots: a comparison of the modelled CZ with four published devices, and, computed in the browser, exact two-electron propagation, pulse optimisation, 1/f noise, Lindblad decoherence, adiabatic CZ pulse shapes and Clifford randomized benchmarking." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
@@ -224,6 +224,18 @@ table.data td:first-child { font-family: var(--font-ui); font-size: 13px; }
 @media (max-width: 719px) { .hero { padding-top: 40px; } }
 
 :root { --accent: #1f5f8b; }
+.results { padding: 32px 0 64px; max-width: 980px; }
+.results h2 { font-family: var(--font-serif); font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+.results h3 { font-family: var(--font-serif); font-size: 21px; font-weight: 600; letter-spacing: -0.005em; margin-top: 56px; }
+.results p { font-family: var(--font-serif); font-size: 17px; line-height: 1.65; color: var(--text-2); max-width: 68ch; margin-top: 14px; }
+.results figure { margin-top: 36px; }
+.results .table-wrap { overflow-x: auto; margin-top: 32px; }
+.results table.data { min-width: 760px; }
+.results table.data td, .results table.data th { vertical-align: top; padding-right: 16px; }
+.results table.data td.nw { white-space: nowrap; }
+.results table.data td.t { font-family: var(--font-ui); font-size: 13px; color: var(--text-2); }
+.results .table-note { font-size: 13px; color: var(--muted); margin-top: 12px; max-width: 80ch; }
+.results + .layout { border-top: 1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -242,8 +254,52 @@ table.data td:first-child { font-family: var(--font-ui); font-size: 13px; }
 <main class="wrap">
   <section class="hero">
     <h1>Exchange-gate control for silicon spin qubits</h1>
-    <p>Two electrons in a silicon double dot interact through an exchange coupling J that is set by a gate voltage. This page shapes J(t) to produce √SWAP, SWAP and CZ gates, then asks how those pulses hold up against charge noise, nuclear-spin fluctuations, relaxation and valley leakage. The calculations run here in the browser and follow the Python package line for line.</p>
+    <p>Two electrons in a silicon double dot interact through an exchange coupling J that is set by a gate voltage. This page shapes J(t) to produce √SWAP, SWAP and CZ gates, then asks how those pulses hold up against charge noise, nuclear-spin fluctuations, relaxation and valley leakage. The package also compares its modelled CZ with four published devices; that comparison comes first, with numbers taken from the Python package. The interactive calculations further down run here in the browser and follow the package line for line.</p>
     <p class="check" id="selftest">Checking the propagator…</p>
+  </section>
+
+  <section class="results" aria-labelledby="cmpTitle">
+    <h2 id="cmpTitle">Comparison with published devices</h2>
+    <p>The package holds the parameters of four published silicon two-qubit devices, each number with its source; derived values, bounds and assumed values are flagged. For each device it splits the error of an exchange-pulsed CZ at the published gate time into four parts: the coherent error of the noiseless pulse after virtual-Z correction, Zeeman noise fitted to the reported T₂* and echo times, exchange (charge) noise, and Markovian T₁ and leftover white dephasing. All numbers are average gate infidelities, the quantity RB and GST report.</p>
+    <p>The model accounts for 4 % (Xue) to 21 % (Mills) of the measured error. Zeeman noise is the largest modelled term for every device. The model contains only the noise each paper characterises, with assumed values where it doesn't, acting during one isolated gate. T₁ is assumed for three of the four devices, and only Xue reports an exchange-noise width: Noiri's is a bound, and Mills and Tanttu borrow Xue's. The result is an estimate of the error from that noise, not a bound in either direction.</p>
+
+    <figure>
+      <div class="chart h-56"><canvas id="cmpChart" aria-label="Share of each device's measured two-qubit error accounted for by the model and by candidate gap terms"></canvas></div>
+      <figcaption>Measured two-qubit error of each device, split into the modelled CZ error, the candidate gap terms whose inputs are published (next section), and what remains. Hover for absolute infidelities. Tanttu's gap terms are upper bounds. Numbers from the Python package (<code>figures/comparison.json</code>); they are not recomputed on this page.</figcaption>
+    </figure>
+
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Device</th><th>Measured two-qubit fidelity (method)</th><th>Gate time</th><th>Model at that time</th><th>Measured / model</th><th>Dominant modelled error</th></tr></thead>
+        <tbody>
+          <tr><td>Xue 2022, Delft, Si/SiGe</td><td>99.65 ± 0.15 % (GST, 2σ)</td><td class="nw">100 ns</td><td>99.986 %</td><td>26</td><td class="t">Zeeman noise, with exchange noise close behind</td></tr>
+          <tr><td>Noiri 2022, RIKEN, Si/SiGe</td><td>99.51 ± 0.02 % (interleaved RB; a CNOT, modelled as a CZ)</td><td class="nw">103 ns</td><td>99.977 %</td><td>21</td><td class="t">Zeeman noise</td></tr>
+          <tr><td>Mills 2022, Princeton, Si/SiGe</td><td>99.81 ± 0.17 % (interleaved RB)</td><td class="nw">40 ns</td><td>99.960 %</td><td>4.7, inside the error bar</td><td class="t">Zeeman noise</td></tr>
+          <tr><td>Tanttu 2024, UNSW/Diraq, SiMOS, device A</td><td>98.42 ± 0.22 % (interleaved RB)</td><td class="nw">256 ns</td><td>99.834 %</td><td>9.5</td><td class="t">Zeeman noise</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-note">Measured / model is the ratio of infidelities. Noiri's gate is a CNOT made of two CROT pulses under always-on exchange; the model is a cosine CZ of the same duration, so the two are not the same gate. For Tanttu the model assumes a frequency difference of 11.555 MHz during the pulse instead of the idle 10.8 MHz, so that the 256 ns square pulse is synchronised; at the idle value it would add a coherent error of 4.0×10⁻³. GST gives 96.8 % for the same Tanttu gate.</p>
+
+    <h3>Candidate mechanisms for the gap</h3>
+    <p>Each paper's own error analysis names mechanisms beyond the noise in the budget: qubit frequencies moved by the exchange-gate voltage, Zeeman and exchange noise slower than the Ramsey average, pulse distortion from a finite line bandwidth, residual exchange outside the pulse, uncalibrated offsets, and a coherent residual measured by GST. The package adds each as a separate term and switches on only those whose inputs the paper publishes, or that follow from published numbers. Those terms close 7.9 % of Xue's gap and at most 12.7 % of Tanttu's. None closes any of Noiri's or Mills's: for Noiri none applies, since the gate is a CROT rather than a pulsed CZ, and for Mills none of the inputs is published.</p>
+
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Device</th><th>Gap, measured minus model</th><th>Closed by terms with published inputs</th><th>Largest such term, and what is left</th></tr></thead>
+        <tbody>
+          <tr><td>Xue 2022</td><td>3.36×10⁻³</td><td>7.9 %</td><td class="t">The coherent residual measured by GST, 2.05×10⁻⁴ (6.1 %). The remaining 3.1×10⁻³ is stochastic according to GST.</td></tr>
+          <tr><td>Noiri 2022</td><td>4.67×10⁻³</td><td>0</td><td class="t">No term applies to a CROT gate under always-on exchange. The authors bound drive errors at 1.6×10⁻³ (34 %) from single-qubit RB; not modelled.</td></tr>
+          <tr><td>Mills 2022</td><td>1.50×10⁻³, inside the error bar</td><td>0</td><td class="t">Run time not published. Slow Zeeman noise would close the gap at about 2.8 h without recalibration.</td></tr>
+          <tr><td>Tanttu 2024 A</td><td>1.41×10⁻² (3.0×10⁻² against GST)</td><td>12.7 %, an upper bound</td><td class="t">Zeeman noise slower than the Ramsey average over the 2.2 h run, at most 1.75×10⁻³ (12 %). The remaining 1.24×10⁻² (87 %) is not closed by anything published.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-note">Percentages are shares of the gap. Tanttu fed back the qubit frequencies and the exchange-gate voltage during the run, so its slow-noise terms are upper bounds.</p>
+
+    <p>Where an input is not published, the term is swept instead, and the sweep gives the value that would close the gap on its own. For Xue that is an rms exchange error of 8.2 % during the gate, eight times the width fitted from 8-minute Ramsey data, or qubit-frequency offsets of 146 kHz rms, six to thirteen times the fitted widths. Extending the fitted 1/f spectrum over the whole 4 h run adds only 1.5×10⁻⁵. For Tanttu a line bandwidth of 2.7 MHz or less would close the gap, but through a coherent SWAP-like error that the paper's GST does not show for this CZ. No paper gives a valley splitting, tunnel coupling or charging energy, so leakage cannot be modelled from published values.</p>
+    <p>Recalibration does not explain Xue's gap either. On assumed drift rates of 1 %/√h in J and 20 kHz/√h in ΔE<sub>z</sub>, the modelled CZ stays above 99.9 % for about 16 h between recalibrations, and above 99.95 % for about 4 h (5.5 h with the Kalman tracker). At the paper's 2 h interval those rates bring it to about 4×10⁻⁴, against 3.5×10⁻³ measured. For drift of J alone to add the whole gap at that interval, it would have to be about 8 %/√h. The paper reports none of these rates.</p>
+    <p>The benchmarks themselves leave room. Interleaved RB returns the gate error exactly only when the errors are depolarising; otherwise, with the published reference errors, the range it allows (Magesan et al. 2012) is 2.2×10⁻² for Noiri, 0.13 for Mills and 0.17 for Tanttu A, each far wider than the gap. GST separates coherent from stochastic error, but drift during the run appears as stochastic error, so it cannot tell slow drift from fast noise.</p>
   </section>
 
   <div class="layout">
@@ -384,14 +440,15 @@ table.data td:first-child { font-family: var(--font-ui); font-size: 13px; }
           <li><b>Pulse shapes.</b> Square, cosine (Hann), Tukey and Blackman windows are scaled to area 500 MHz·ns. The conditional phase is then exactly π, because the {|↑↓⟩, |↓↑⟩} block is a phase times an SU(2) matrix. The plotted error is the average-gate infidelity to CZ after the optimal single-qubit Z corrections.</li>
           <li><b>Benchmarking.</b> The 11 520 two-qubit Cliffords are generated by closure of {H⊗I, I⊗H, S⊗I, I⊗S, CNOT}, and density matrices are evolved with amplitude and phase damping after every layer. The interleaved error is r = ¾(1 − p<sub>int</sub>/p<sub>ref</sub>).</li>
           <li><b>Valley leakage.</b> An 8×8 spin ⊗ valley model with E<sub>v</sub>/2·τ<sub>z</sub> and Δ<sub>soc</sub>(Z₁ − Z₂)⊗τ<sub>x</sub>, starting from the singlet in the lower valley.</li>
-          <li><b>Limits.</b> Exchange is a single control axis, so averaging over an error ensemble buys little robustness against amplitude errors. Charge noise is treated as quasi-static within each gate.</li>
+          <li><b>Device comparison.</b> Computed by the Python package (<code>devices</code> and <code>error_budget</code>), not on this page. The Zeeman spectrum A/f<sup>α</sup> is pinned to the Ramsey band so that it reproduces T₂*, and α is fitted per qubit where the paper reports a Hahn-echo time (α = 1 for Xue, which reports none). Exchange noise enters through toggle-frame filter functions, T₁ and leftover white dephasing through the Lindblad equation. The gap terms are first order and added one at a time.</li>
+          <li><b>Limits.</b> Exchange is a single control axis, so averaging over an error ensemble buys little robustness against amplitude errors. Charge noise is treated as quasi-static within each gate. The device comparison models every two-qubit gate as an exchange-pulsed CZ with only the noise the paper characterises, treats Zeeman and exchange noise as independent, and does not model leakage or microwave crosstalk, because no paper gives the valley or orbital energies or the crosstalk amplitudes.</li>
         </ul>
       </details>
     </section>
   </div>
 </main>
 
-<footer class="site-footer"><div class="wrap"><span>spin-optimal-control 0.4 · Jasper Sands · Apache-2.0</span><span>Python: JAX, SciPy, Cirq. This page: plain JavaScript and Chart.js.</span></div></footer>
+<footer class="site-footer"><div class="wrap"><span>spin-optimal-control 0.5 · Jasper Sands · Apache-2.0</span><span>Python: JAX, SciPy, Cirq. This page: plain JavaScript and Chart.js.</span></div></footer>
 
 <script id="engine">
 /* ---------------------------------------------------------------------------
@@ -854,6 +911,29 @@ const lossChart = new Chart($('lossChart'), { type: 'line', data: { labels: [], 
 const popChart = new Chart($('popChart'), { type: 'line', data: { labels: [], datasets: [
   { label: 'singlet', data: [], borderColor: C('--accent') }, { label: 'T₀', data: [], borderColor: C('--violet') }, { label: 'upper valley × 10⁶', data: [], borderColor: C('--rose'), borderDash: [3, 3] } ] },
   options: { scales: { x: Q.axis('time (ns)'), y: Q.axis('population', { min: 0, max: 1.05 }) } } });
+// Device comparison: average-gate infidelities from the Python package (figures/comparison.json).
+// model = the four-part CZ budget at the published gate time; closed = gap terms with published inputs.
+const DEVICES = [
+  { name: 'Xue 2022', measured: 0.0035, zeeman: 6.79333e-05, exchange: 5.94589e-05, coherent: 5.93196e-08, markovian: 7.99995e-06, closed: 0.000265061 },
+  { name: 'Noiri 2022', measured: 0.0049, zeeman: 0.000217263, exchange: 7.0595e-06, coherent: 9.53526e-12, markovian: 8.23995e-06, closed: 0 },
+  { name: 'Mills 2022', measured: 0.0019, zeeman: 0.000344094, exchange: 5.4625e-05, coherent: 2.16242e-07, markovian: 1.55555e-06, closed: 0 },
+  { name: 'Tanttu 2024 A', measured: 0.0158, zeeman: 0.00149426, exchange: 0.000150174, coherent: 1.71505e-10, markovian: 2.04797e-05, closed: 0.00178821 },
+];
+const CMP_PARTS = [
+  { label: 'model: Zeeman noise', value: d => d.zeeman, color: C('--accent') },
+  { label: 'model: exchange noise', value: d => d.exchange, color: Q.alpha('--accent', 0.5) },
+  { label: 'model: coherent and Markovian', value: d => d.coherent + d.markovian, color: Q.alpha('--accent', 0.22) },
+  { label: 'gap terms with published inputs', value: d => d.closed, color: C('--muted') },
+  { label: 'not accounted for', value: d => d.measured - d.zeeman - d.exchange - d.coherent - d.markovian - d.closed, color: C('--surface-3') },
+];
+new Chart($('cmpChart'), { type: 'bar',
+  data: { labels: DEVICES.map(d => d.name), datasets: CMP_PARTS.map(part => ({ label: part.label, backgroundColor: part.color, borderWidth: 0, maxBarThickness: 64,
+    data: DEVICES.map(d => 100 * part.value(d) / d.measured), abs: DEVICES.map(part.value) })) },
+  options: { scales: { x: Q.axis('', { stacked: true }), y: Q.axis('share of measured error', { stacked: true, min: 0, max: 100, ticks: { callback: v => v + ' %' } }) },
+    plugins: { legend: { labels: { boxHeight: 10, boxWidth: 10 } },
+      tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${Q.fmt.sci(ctx.dataset.abs[ctx.dataIndex], 2)}`,
+        footer: items => `measured ${Q.fmt.sci(DEVICES[items[0].dataIndex].measured, 2)}` } } } } });
+
 const SHAPE_COLORS = { square: '--muted', tukey: '--amber', cosine: '--accent', blackman: '--violet' };
 const shapeChart = new Chart($('shapeChart'), { type: 'line', data: { datasets: Object.keys(SHAPE_COLORS).map(s => ({ label: s, data: [], borderColor: C(SHAPE_COLORS[s]), borderDash: s === 'square' ? [4, 3] : undefined, pointRadius: 2 })) },
   options: { parsing: false, scales: { x: Q.axis('duration T (ns)', { type: 'linear', min: 0, max: 300 }), y: Q.axis('CZ infidelity', { type: 'logarithmic' }) } } });
