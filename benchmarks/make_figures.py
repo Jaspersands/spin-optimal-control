@@ -8,7 +8,10 @@ For every device in ``data/devices.json``: the CZ error budget against gate
 time (stacked, for the pulse shape closest to the published one), the total
 for a cosine window (and GRAPE where the coherent error matters), the best gate
 time per shape, and the measured fidelity; then the recalibration interval for
-Xue 2022 under assumed drift. Takes a few minutes.
+Xue 2022 under assumed drift; then how much of each device's gap between the
+measured and the modelled error the candidate mechanisms close
+(``devices.gap_analysis``), with the unpublished inputs swept. Takes about five
+minutes.
 
 The coherent term is sampled on a fine grid (it has sharp minima at the
 synchronised times of square-edged pulses); the noise terms are smooth and are
@@ -33,7 +36,7 @@ import matplotlib  # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from spin_optimal_control.devices import best_gate_times, comparison_table, load_devices  # noqa: E402
+from spin_optimal_control.devices import best_gate_times, comparison_table, gap_analysis, load_devices  # noqa: E402
 from spin_optimal_control.error_budget import (  # noqa: E402
     LABELS,
     coherent_error,
@@ -287,6 +290,127 @@ def calibration_figure(c, short, path):
     plt.close(fig)
 
 
+GAP_COLORS = {"gate_zeeman": "#2a9d74", "slow_zeeman": COLORS["zeeman"], "slow_exchange": COLORS["exchange"],
+              "calibration_residual": "#7a68c8"}
+DEVICE_STYLE = {"xue2022": ("-", "o"), "noiri2022": ((0, (5, 2)), "s"), "mills2022": ((0, (1, 1.5)), "D"),
+                "tanttu2024": ((0, (6, 2, 1, 2)), "^")}
+
+
+def _first_word(short: str) -> str:
+    return short.split(" (")[0]
+
+
+def gap_bars(ax, gaps, legend_ax):
+    from matplotlib.patches import Patch
+
+    ys = np.arange(len(gaps))[::-1]
+    for y, g in zip(ys, gaps):
+        left = 0.0
+        for k in ("calibration_residual", "gate_zeeman", "slow_exchange", "slow_zeeman"):
+            t = g["terms"][k]
+            if t["status"] not in ("modelled", "upper bound", "measured") or t["share"] <= 0:
+                continue
+            w = 100 * t["share"]
+            ax.barh(y, w, left=left, height=0.55, color=GAP_COLORS[k], lw=0,
+                    hatch="////" if t["status"] == "upper bound" else None, edgecolor="white")
+            left += w
+        ax.barh(y, 100 - left, left=left, height=0.55, color="#ececec", lw=0)
+        ax.text(101.5, y, f"{100 * g['closed_share']:.0f}% of {g['gap']:.1e}", va="center", fontsize=8, color=INK)
+    ax.set_yticks(ys)
+    ax.set_yticklabels([_first_word(g["short"]) for g in gaps], fontsize=8.5)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(-0.6, len(gaps) - 0.4)
+    ax.grid(False)
+    ax.grid(True, axis="x", color=GRID, lw=0.8)
+    ax.set_xlabel("share of the gap (measured minus model), %")
+    ax.set_title("Gap closed by terms with published inputs", loc="left", color=INK)
+    short = {"slow_zeeman": "Zeeman noise below the Ramsey band", "slow_exchange": "exchange noise below the Ramsey band",
+             "gate_zeeman": "qubit frequencies moved by the gate voltage",
+             "calibration_residual": "coherent residual measured by GST"}
+    handles = [Patch(color=GAP_COLORS[k], label=v) for k, v in short.items()]
+    handles += [Patch(facecolor="#bdbdbd", hatch="////", edgecolor="white", label="upper bound (fed back during the run)"),
+                Patch(color="#ececec", label="not closed by anything published")]
+    legend_ax.axis("off")
+    legend_ax.legend(handles=handles, loc="center left", fontsize=7.5)
+
+
+def _spread(points, min_dex=0.22):
+    """Nudge label heights (log scale) apart so that labels at the same x do not overlap."""
+    order = sorted(range(len(points)), key=lambda i: points[i])
+    out = list(points)
+    for a, b in zip(order[:-1], order[1:]):
+        if np.log10(out[b]) - np.log10(out[a]) < min_dex:
+            out[b] = out[a] * 10**min_dex
+    return out
+
+
+def gap_sweep(ax, gaps, term, title, xlabel, sum_with=None, marks=None, flip=False, star_color=None):
+    """One term as a function of an unpublished input, divided by each device's gap; 1 closes it."""
+    ends, names = [], []
+    for g in gaps:
+        t = g["terms"][term]
+        if not t.get("sweep"):
+            continue
+        x = np.asarray(t["sweep"]["x"])
+        y = np.asarray(t["sweep"]["y"], dtype=float)
+        if sum_with:
+            y = y + np.asarray(g["terms"][sum_with]["sweep"]["y"], dtype=float)
+        r = y / g["gap"]
+        ls, mk = DEVICE_STYLE.get(g["key"], ("-", "o"))
+        ax.plot(x, np.abs(r), color=INK2, lw=1.1, ls=ls)
+        pos = r > 0
+        ax.plot(x[pos], r[pos], mk, ms=3.8, color=INK, mec=INK, ls="")
+        ax.plot(x[~pos], -r[~pos], mk, ms=3.8, mfc="white", mec=INK2, mew=0.9, ls="")
+        i = int(np.argmin(x)) if flip else int(np.argmax(x))
+        ends.append((x[i], min(max(abs(r[i]), 2e-5), 20.0)))
+        names.append(_first_word(g["short"]))
+    heights = _spread([e[1] for e in ends])
+    for (xe, _), h, name in zip(ends, heights, names):
+        ax.annotate(name, (xe, h), xytext=(5, 0), textcoords="offset points", fontsize=7.5, color=INK2,
+                    va="center", ha="left", annotation_clip=False)
+    for xm, ym in (marks or []):
+        ax.plot([xm], [ym], "*", ms=10, color=star_color or COLORS["zeeman"], mec="white", mew=0.5, zorder=5)
+    ax.axhline(1.0, color=INK, lw=0.8)
+    ax.text(0.03, 1.0, "closes the gap", transform=ax.get_yaxis_transform(), fontsize=7.5, color=INK, va="bottom")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_ylim(1e-5, 30)
+    ax.grid(True, axis="both", which="major", color=GRID, lw=0.8)
+    ax.set_title(title, loc="left", color=INK)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("added error / gap")
+    if flip:
+        ax.invert_xaxis()
+
+
+def gap_figure(gaps, path):
+    from matplotlib.lines import Line2D
+
+    fig = plt.figure(figsize=(11.5, 7.4))
+    gs = fig.add_gridspec(2, 3, height_ratios=[0.8, 1.0], hspace=0.55, wspace=0.42)
+    gap_bars(fig.add_subplot(gs[0, :2]), gaps, fig.add_subplot(gs[0, 2]))
+    axes = [fig.add_subplot(gs[1, i]) for i in range(3)]
+    marks = [(g["terms"]["slow_exchange"]["hours"],
+              (g["terms"]["slow_zeeman"]["value"] + g["terms"]["slow_exchange"]["value"]) / g["gap"])
+             for g in gaps if g["terms"]["slow_zeeman"]["value"] is not None and g["terms"]["slow_exchange"]["value"] is not None]
+    gap_sweep(axes[0], gaps, "slow_zeeman", "Noise slower than the Ramsey average",
+              "lab time without recalibration (h)", sum_with="slow_exchange", marks=marks)
+    gap_sweep(axes[1], gaps, "distortion", "Pulse distortion (single-pole low-pass)",
+              "bandwidth of the exchange line (MHz)", flip=True)
+    mk = [(g["terms"]["gate_zeeman"]["df_dlnj_peak_mhz"][1], g["terms"]["gate_zeeman"]["share"])
+          for g in gaps if g["terms"]["gate_zeeman"]["status"] == "modelled"]
+    gap_sweep(axes[2], gaps, "gate_zeeman", "Qubit frequency moved by the exchange gate",
+              "df/d(ln J) of one qubit (MHz)", marks=mk, star_color=GAP_COLORS["gate_zeeman"])
+    handles = [Line2D([], [], ls="", marker="o", ms=4, color=INK, label="adds error"),
+               Line2D([], [], ls="", marker="o", ms=4, mfc="white", mec=INK2, label="removes error (absolute value)"),
+               Line2D([], [], ls="", marker="*", ms=9, color=INK2, mec="white",
+                      label="at the published or derived input (Xue, Tanttu)")]
+    fig.legend(handles=handles, loc="lower center", ncol=3, fontsize=7.5, bbox_to_anchor=(0.5, 0.0))
+    fig.subplots_adjust(left=0.085, right=0.95, top=0.95, bottom=0.14)
+    fig.savefig(path, dpi=110)
+    plt.close(fig)
+
+
 def _rounded(x, digits: int = 6):
     """Six significant digits in comparison.json; the figures use the full values."""
     if isinstance(x, dict):
@@ -321,7 +445,13 @@ def main(argv=None):
     summary_figure(results, out_dir / "summary.png")
     cal = calibration_results(devs["xue2022"], n_runs=30 if args.quick else 120)
     calibration_figure(cal, devs["xue2022"].short, out_dir / "calibration_interval.png")
-    payload = {"table": table, "devices": results, "calibration": cal}
+    gaps = []
+    for dev in devs.values():
+        t1 = time.time()
+        gaps.append(gap_analysis(dev, n_points=7 if args.quick else 13))
+        print(f"{dev.key} gap mechanisms: {time.time() - t1:.1f} s", flush=True)
+    gap_figure(gaps, out_dir / "gap_mechanisms.png")
+    payload = {"table": table, "devices": results, "calibration": cal, "gap": gaps}
     (out_dir / "comparison.json").write_text(json.dumps(_rounded(payload), indent=1) + "\n")
     for r in results:
         b = r["best"]
@@ -331,6 +461,9 @@ def main(argv=None):
         for tgt, v in sc["targets"].items():
             print(f"recalibration ({name}, J drift {100 * sc['drift_j_rel_per_sqrt_h']:.1f} %/sqrt h), target {tgt}: "
                   f"every {v['plain_h']:.2f} h (newest measurement), {v['kalman_h']:.2f} h (Kalman)")
+    from spin_optimal_control.devices import format_gap_table
+
+    print(format_gap_table(gaps))
     print(f"done in {time.time() - t0:.0f} s")
 
 

@@ -48,8 +48,10 @@ from .error_budget import (
     combined_simulation,
     sweep_gate_time,
     optimal_gate_time,
+    GapMechanisms,
+    irb_error_bound,
 )
-from .devices import Device, load_devices, comparison_table
+from .devices import Device, load_devices, comparison_table, gap_analysis
 
 __version__ = "0.5.0"
 __all__ = [
@@ -98,7 +100,10 @@ __all__ = [
     "combined_simulation",
     "sweep_gate_time",
     "optimal_gate_time",
+    "GapMechanisms",
+    "irb_error_bound",
     "Device",
     "load_devices",
     "comparison_table",
+    "gap_analysis",
 ]

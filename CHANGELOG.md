@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+Candidate mechanisms for the gap between the modelled and the measured two-qubit error.
+
+### Added
+- `error_budget.GapMechanisms`: terms outside the four-part budget, each off unless its input is given, reported in `CZErrorBudget.gap` and included in `total` (`base_total` is the four-part budget). The terms are qubit frequencies moved by the exchange-gate voltage (`GateZeemanCoupling`, correlated with the exchange noise), Zeeman and exchange noise slower than the Ramsey average, pulse distortion through a single-pole low-pass with recalibrated area (`distorted_pulse`, `ExchangeVoltageMap`), residual exchange outside the pulse (`residual_exchange_error`), uncalibrated frequency and exchange offsets, and a measured coherent residual. `GAP_TERMS` lists them and `GapMechanisms.only` selects some.
+- `error_budget.irb_error_bound`: the range interleaved RB allows for the true gate error (Magesan et al. 2012).
+- `devices.gap_analysis` and `format_gap_table`: per device, what each term adds and its share of the gap, with a status (modelled, upper bound, measured, not published, not applicable). Unpublished inputs are swept, with the value that would close the gap. `Device.gap_mechanisms`, `voltage_map`, `gate_zeeman_coupling` and `benchmark_hours` build the inputs, and `Device.budget` takes `mechanisms`.
+- `devices.json`: Xue's fit of the qubit frequencies against the barrier voltage (β₁, β₂, γ), the GST error generators of the CZ and the coherent part derived from them, and the GST run length derived from the recalibration schedule; Noiri's reference Clifford and single-qubit primitive fidelities, the authors' simulated dephasing error and the length of their noise record; Mills's reference Clifford fidelity and the 10 kHz echo floor for residual exchange; Tanttu's J-gate swing, reference Clifford fidelity, IRB run length (derived) and feedback parameters. The `not_reported` lists now name the line bandwidth, valley and tunnel energies and benchmark durations.
+- `spin-control devices --gap` prints the mechanism table and the interleaved-RB ranges.
+- `make_figures.py` writes `figures/gap_mechanisms.png` and adds the gap analysis to `figures/comparison.json`.
+- README: a table of candidate mechanisms against the gap each closes, per device, and what interleaved RB and GST capture.
+
+### Changed
+- Tests: 132 → 148.
+
 ## 0.5.0 — 2026-10-19
 
 A comparison of the modelled CZ with four published silicon devices.

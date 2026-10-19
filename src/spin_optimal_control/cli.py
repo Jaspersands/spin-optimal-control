@@ -95,6 +95,9 @@ def build_parser() -> argparse.ArgumentParser:
     d = sub.add_parser("devices", help="Published devices: measured gate fidelity against the CZ error budget")
     d.add_argument("--budget", action="store_true", help="also print each contribution at the published gate time")
     d.add_argument("--optimum", action="store_true", help="also find the best gate time for square and cosine pulses (slower)")
+    d.add_argument("--gap", action="store_true",
+                   help="also show how much of the measured-minus-modelled gap each candidate mechanism closes "
+                        "(closed-form parts only; benchmarks/make_figures.py adds the sweeps)")
     d.add_argument("--json", action="store_true")
 
     b = sub.add_parser("benchmark", help="Run the benchmark suite")
@@ -240,6 +243,23 @@ def cmd_devices(args) -> int:
               for r in rows if r.get("coherent_at_idle_dez") is not None]
     if notes:
         lines += [""] + notes
+    if args.gap:
+        from .devices import format_gap_table, gap_analysis
+
+        gaps = [gap_analysis(devs[r["key"]], sweeps=False) for r in rows]
+        for r, g in zip(rows, gaps):
+            r["gap"] = g
+        lines += ["", "Candidate mechanisms for the gap (measured minus modelled, average infidelity). A value is the",
+                  "added error and its share of the gap, from published or derived inputs ('<=': an upper bound,",
+                  "the quantity was fed back during the run). 'needs' is the unpublished input that would close",
+                  "the gap on its own; terms that need a sweep are left out here.", "",
+                  format_gap_table(gaps)]
+        for g in gaps:
+            irb = g["benchmark"].get("irb")
+            if irb:
+                lines.append(f"  {g['short']}: interleaved RB gives {irb['estimate']:.2e}; with the reference "
+                             f"Clifford error the true gate error lies within +/- {irb['bound']:.2e} of it "
+                             "(Magesan et al. 2012)")
     _emit({"devices": rows}, args.json, lines)
     return 0
 

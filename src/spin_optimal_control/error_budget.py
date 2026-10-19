@@ -32,6 +32,13 @@ fast 1/f traces) and returns the infidelity of the averaged channel.
 Conventions: MHz and ns; ``delta_ez_mhz`` is the qubit frequency difference
 f₁ − f₂. The package Hamiltonian is written with Pauli matrices,
 (ΔB_z/2)(Z₁ − Z₂), so its ``delta_bz`` is ΔE_z / 2.
+
+Candidate mechanisms for the gap between this budget and measured errors are
+separate terms, each switched on through ``GapMechanisms`` (see ``GAP_TERMS``):
+the exchange-gate voltage moving the qubit frequencies, noise slower than the
+Ramsey average, pulse distortion from a finite bandwidth, residual exchange
+outside the pulse, uncalibrated frequency and exchange offsets, and a measured
+coherent residual. With no mechanisms the budget is the four parts above.
 """
 
 from __future__ import annotations
@@ -43,7 +50,7 @@ import numpy as np
 import scipy.linalg
 
 from .hamiltonian import HEISENBERG_EXCHANGE, SIGMA_I, SIGMA_Z, Z_DIFF, ExchangeDynamics, SiliconSpinHamiltonian
-from .noise import H_OVER_KB_K_PER_MHZ, _superop_dissipator, gate_filter_functions
+from .noise import H_OVER_KB_K_PER_MHZ, _superop_dissipator, control_matrix
 from .pulse_shaping import CZ_AREA_MHZ_NS, cz_fidelity_up_to_z, window
 from .units import MHZ_NS_TO_RAD, PER_US_TO_PER_NS
 
@@ -56,11 +63,21 @@ _SM = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.complex128)   # lowers |0⟩=|
 _CZ = np.diag([1.0, 1.0, 1.0, -1.0]).astype(np.complex128)
 
 CONTRIBUTIONS = ("coherent", "zeeman", "exchange", "markovian")
+GAP_TERMS = ("gate_zeeman", "slow_zeeman", "slow_exchange", "distortion", "residual_exchange",
+             "frequency_offset", "exchange_offset", "calibration_residual")
 LABELS = {
     "coherent": "coherent (non-adiabatic)",
     "zeeman": "Zeeman noise (T2*)",
     "exchange": "exchange (charge) noise",
     "markovian": "Markovian T1/T2",
+    "gate_zeeman": "qubit frequencies moved by the exchange-gate voltage",
+    "slow_zeeman": "Zeeman noise slower than the Ramsey average",
+    "slow_exchange": "exchange noise slower than the Ramsey average",
+    "distortion": "pulse distortion from a finite bandwidth",
+    "residual_exchange": "residual exchange outside the pulse",
+    "frequency_offset": "uncalibrated qubit-frequency offset",
+    "exchange_offset": "uncalibrated exchange offset",
+    "calibration_residual": "coherent calibration residual (measured)",
 }
 
 
@@ -361,6 +378,7 @@ class CZErrorBudget:
     markovian: float
     dt_ns: float = 0.0
     j_pulse: np.ndarray = field(default=None, repr=False)
+    gap: Dict[str, float] = field(default_factory=dict)     # the GapMechanisms terms that were switched on
 
     @property
     def zeeman(self) -> float:
@@ -371,8 +389,15 @@ class CZErrorBudget:
         return self.exchange_quasistatic + self.exchange_fast
 
     @property
+    def base_total(self) -> float:
+        """The four-part budget without any gap terms."""
+        return float(self.coherent + self.zeeman + self.exchange + self.markovian)
+
+    @property
     def contributions(self) -> Dict[str, float]:
-        return {"coherent": self.coherent, "zeeman": self.zeeman, "exchange": self.exchange, "markovian": self.markovian}
+        c = {"coherent": self.coherent, "zeeman": self.zeeman, "exchange": self.exchange, "markovian": self.markovian}
+        c.update(self.gap)
+        return c
 
     @property
     def total(self) -> float:
@@ -401,9 +426,208 @@ def _hamiltonians(h: SiliconSpinHamiltonian, j_pulse: np.ndarray) -> List[np.nda
     return [h.get_hamiltonian_matrix(float(j)) for j in j_pulse]
 
 
+# --------------------------------------------------------------------------- #
+# Candidate mechanisms for the gap
+# --------------------------------------------------------------------------- #
+@dataclass
+class ExchangeVoltageMap:
+    """J(v) = J_ref·e^{κv} on the exchange control line, v measured from the point where J = J_ref (V)."""
+
+    kappa_per_v: float
+    j_ref_mhz: float
+
+    def voltage(self, j_mhz) -> np.ndarray:
+        j = np.maximum(np.asarray(j_mhz, dtype=float), self.j_ref_mhz)
+        return np.log(j / self.j_ref_mhz) / self.kappa_per_v
+
+    def exchange(self, v) -> np.ndarray:
+        return self.j_ref_mhz * np.exp(self.kappa_per_v * np.asarray(v, dtype=float))
+
+
+@dataclass
+class GateZeemanCoupling:
+    """
+    Qubit frequencies that follow the exchange-gate voltage, f_j(v) = f_j(0) + β_j v^γ
+    (Xue 2022, Methods, with J(v) = J_res e^{2αv}, so κ = 2α).
+
+    A voltage fluctuation δv changes J by δJ/J = κ δv and qubit j by β_j γ v^(γ−1) δv,
+    so the exchange-noise source η = δJ/J also shifts qubit j by k_j(t)·η with
+    k_j = β_j γ v(t)^(γ−1) / κ (MHz). The mean shift β_j v^γ during the pulse is a
+    calibrated single-qubit phase and is not modelled.
+    """
+
+    beta_mhz: Tuple[float, float]          # MHz V^-γ
+    gamma: float
+    voltage_map: ExchangeVoltageMap
+
+    @classmethod
+    def linear(cls, df_dlnj_mhz: Tuple[float, float], j_floor_mhz: float = 1e-6) -> "GateZeemanCoupling":
+        """
+        A frequency shift linear in the gate voltage (γ = 1), given as df_j/d(ln J) in MHz: the shift of
+        qubit j when J changes by a factor e. It needs no lever arm, since κ cancels.
+        """
+        return cls(beta_mhz=_pair(df_dlnj_mhz), gamma=1.0, voltage_map=ExchangeVoltageMap(1.0, float(j_floor_mhz)))
+
+    def sensitivity_mhz(self, j_mhz) -> np.ndarray:
+        """(2, n): frequency shift of each qubit per unit δJ/J along the pulse."""
+        v = self.voltage_map.voltage(j_mhz)
+        g = np.zeros_like(v)
+        on = v > 0
+        g[on] = self.gamma * v[on] ** (self.gamma - 1.0)
+        return np.array([float(b) * g / self.voltage_map.kappa_per_v for b in self.beta_mhz])
+
+
+@dataclass
+class GapMechanisms:
+    """
+    Error terms outside the four-part budget. Each is off while its parameter is None or zero.
+
+    gate_zeeman : ``GateZeemanCoupling``; the exchange noise then also moves the qubit frequencies
+        (term ``gate_zeeman``, quasi-static and 1/f, correlated with the exchange noise).
+    zeeman_f_run_hz, exchange_f_run_hz : lowest noise frequency a benchmark averages over,
+        1/(run time), or 1/(recalibration interval) for a recalibrated quantity. The fitted
+        1/f^α spectra are extended from ``f_low_hz`` down to it; the added variance is
+        quasi-static within a gate (terms ``slow_zeeman``, ``slow_exchange``).
+    bandwidth_mhz : −3 dB bandwidth of a single-pole low-pass on the exchange control. The pulse
+        is filtered (the voltage when ``voltage_map`` is given, otherwise J itself), recalibrated
+        to the CZ area, and the term ``distortion`` is the change of the whole budget.
+    j_off_mhz, idle_ns : residual exchange, and the time outside the pulse that the benchmark
+        attributes to the CZ (term ``residual_exchange``). No paper here reports such a time.
+    frequency_offset_mhz : rms offsets (δf₁, δf₂) of the qubit frequencies during the gate that
+        no calibration removes: drift between recalibrations, shifts after microwave bursts or
+        exchange pulses (term ``frequency_offset``).
+    exchange_offset_rel : the same for δJ/J, e.g. barrier drift or an exchange-level calibration
+        error (term ``exchange_offset``). A static miscalibration of size x and a slow Gaussian
+        offset of rms x give the same average infidelity to leading order.
+    calibration_residual : a measured coherent residual, average infidelity, added as given
+        (term ``calibration_residual``).
+
+    With ``gate_zeeman`` on, the slow exchange noise and the exchange offset move the qubit
+    frequencies too, as the fast exchange noise does.
+    """
+
+    gate_zeeman: Optional[GateZeemanCoupling] = None
+    zeeman_f_run_hz: Optional[float] = None
+    exchange_f_run_hz: Optional[float] = None
+    bandwidth_mhz: Optional[float] = None
+    voltage_map: Optional[ExchangeVoltageMap] = None
+    j_off_mhz: float = 0.0
+    idle_ns: float = 0.0
+    frequency_offset_mhz: Tuple[float, float] = (0.0, 0.0)
+    exchange_offset_rel: float = 0.0
+    calibration_residual: float = 0.0
+
+    def __post_init__(self):
+        self.frequency_offset_mhz = _pair(self.frequency_offset_mhz)
+
+    def active(self) -> Tuple[str, ...]:
+        on = {
+            "gate_zeeman": self.gate_zeeman is not None,
+            "slow_zeeman": self.zeeman_f_run_hz is not None,
+            "slow_exchange": self.exchange_f_run_hz is not None,
+            "distortion": self.bandwidth_mhz is not None,
+            "residual_exchange": self.j_off_mhz > 0 and self.idle_ns > 0,
+            "frequency_offset": any(x != 0 for x in self.frequency_offset_mhz),
+            "exchange_offset": self.exchange_offset_rel != 0,
+            "calibration_residual": self.calibration_residual != 0,
+        }
+        return tuple(k for k in GAP_TERMS if on[k])
+
+    def only(self, *names: str) -> "GapMechanisms":
+        """Copy with every term not in ``names`` switched off."""
+        unknown = set(names) - set(GAP_TERMS)
+        if unknown:
+            raise ValueError(f"unknown gap terms {sorted(unknown)}")
+        keep = set(names)
+        return GapMechanisms(
+            gate_zeeman=self.gate_zeeman if "gate_zeeman" in keep else None,
+            zeeman_f_run_hz=self.zeeman_f_run_hz if "slow_zeeman" in keep else None,
+            exchange_f_run_hz=self.exchange_f_run_hz if "slow_exchange" in keep else None,
+            bandwidth_mhz=self.bandwidth_mhz if "distortion" in keep else None,
+            voltage_map=self.voltage_map,
+            j_off_mhz=self.j_off_mhz if "residual_exchange" in keep else 0.0,
+            idle_ns=self.idle_ns if "residual_exchange" in keep else 0.0,
+            frequency_offset_mhz=self.frequency_offset_mhz if "frequency_offset" in keep else (0.0, 0.0),
+            exchange_offset_rel=self.exchange_offset_rel if "exchange_offset" in keep else 0.0,
+            calibration_residual=self.calibration_residual if "calibration_residual" in keep else 0.0,
+        )
+
+
+def residual_exchange_error(delta_ez_mhz: float, j_off_mhz: float, duration_ns: float) -> float:
+    """
+    Average infidelity of an idle slot under a constant residual exchange, after the best
+    virtual-Z correction. For J ≪ ΔE_z it is a conditional phase φ = 2π·10⁻³·J·t, and
+    1 − F = (4/5)·sin²(φ/4).
+    """
+    if j_off_mhz <= 0 or duration_ns <= 0:
+        return 0.0
+    U = ExchangeDynamics(SiliconSpinHamiltonian(delta_bz=0.5 * float(delta_ez_mhz))).propagate_unitary(
+        np.array([float(j_off_mhz)]), float(duration_ns))
+    # Local Z phases cannot remove φ = arg(d₀d₃/d₁d₂); the best correction leaves ±φ/4 on each entry.
+    # (pulse_shaping.cz_fidelity_up_to_z puts all of it on d₃, which is exact only when φ is calibrated.)
+    d = np.diag(U)
+    phi = float(np.angle(d[0] * d[3] / (d[1] * d[2])))
+    a = np.abs(d)
+    tr = (a[0] + a[3]) * np.exp(0.25j * phi) + (a[1] + a[2]) * np.exp(-0.25j * phi)
+    return float(1.0 - (abs(tr) ** 2 + 4.0) / 20.0)
+
+
+def distorted_pulse(j_pulse: np.ndarray, dt_ns: float, bandwidth_mhz: float,
+                    voltage_map: Optional[ExchangeVoltageMap] = None, tail_tau: float = 5.0,
+                    max_dt_tau: float = 0.5) -> Tuple[np.ndarray, np.ndarray, float]:
+    """
+    A pulse through a single-pole low-pass with −3 dB bandwidth ``bandwidth_mhz`` (τ = 1/2πf).
+
+    The slices are split until dt ≤ ``max_dt_tau``·τ (exact for a piecewise-constant pulse),
+    and ``tail_tau``·τ is appended for the decay after the pulse. With a ``voltage_map`` the
+    voltage v(J) is filtered and mapped back to J, otherwise J is filtered directly. Both the
+    filtered and the reference pulse (same grid and floor, not filtered) are rescaled to the CZ
+    area, as the experiments recalibrate the exchange amplitude. Returns (filtered, reference, dt).
+    """
+    import scipy.signal
+
+    tau = 1e3 / (2.0 * np.pi * float(bandwidth_mhz))                    # ns
+    m = int(max(1, np.ceil(dt_ns / (max_dt_tau * tau))))
+    dt = dt_ns / m
+    j = np.repeat(np.asarray(j_pulse, dtype=float), m)
+    n_tail = int(np.ceil(tail_tau * tau / dt))
+    x = voltage_map.voltage(j) if voltage_map is not None else j
+    x = np.concatenate([x, np.zeros(n_tail)])
+    a = np.exp(-dt / tau)
+    y_end = scipy.signal.lfilter([1.0 - a], [1.0, -a], x)               # output at the end of each slice
+    y_start = np.concatenate([[0.0], y_end[:-1]])
+    y = x + (y_start - x) * (tau / dt) * (1.0 - a)                       # slice average of the response
+    if voltage_map is not None:
+        filt, ref = voltage_map.exchange(y), voltage_map.exchange(x)
+    else:
+        filt, ref = y, x
+    filt = filt * CZ_AREA_MHZ_NS / (np.sum(filt) * dt)
+    ref = ref * CZ_AREA_MHZ_NS / (np.sum(ref) * dt)
+    return filt, ref, dt
+
+
+def _omega_grid(noise: CZNoiseParameters, dt_ns: float, n_omega: int) -> np.ndarray:
+    w_r = 2.0 * np.pi * noise.f_ramsey_hz * 1e-9                     # rad/ns
+    w_max = np.pi / dt_ns
+    return np.concatenate([[0.0], np.logspace(np.log10(w_r), np.log10(w_max), int(n_omega))])
+
+
+def _fast_part(F: np.ndarray, A: np.ndarray, alphas: np.ndarray, omega: np.ndarray) -> np.ndarray:
+    """∫ S(ω) F(ω) dω / (2π d) above the Ramsey band, per noise source (rows of F)."""
+    w = omega[1:]
+    f_hz = w * 1e9 / (2.0 * np.pi)
+    S = 1e9 * A[:, None] * f_hz[None, :] ** (-alphas[:, None])       # one-sided, per (rad/ns)
+    _trapz = getattr(np, "trapezoid", None) or np.trapz               # NumPy < 2.0
+    return _trapz(S * F[:, 1:] * w[None, :], np.log(w), axis=1) / (2.0 * np.pi * D)
+
+
 def cz_error_budget_for_pulse(noise: CZNoiseParameters, j_pulse: np.ndarray, dt_ns: float, label: str = "pulse",
-                              n_omega: int = 240) -> CZErrorBudget:
-    """Error budget of an arbitrary exchange pulse J(t) (MHz, slices of ``dt_ns``) calibrated to a CZ."""
+                              n_omega: int = 240, mechanisms: Optional[GapMechanisms] = None) -> CZErrorBudget:
+    """
+    Error budget of an arbitrary exchange pulse J(t) (MHz, slices of ``dt_ns``) calibrated to a CZ.
+    ``mechanisms`` switches on gap terms (``GapMechanisms``); they are reported in ``gap`` and
+    included in ``total``.
+    """
     j = np.asarray(j_pulse, dtype=float)
     T = len(j) * dt_ns
     h = noise.hamiltonian()
@@ -416,18 +640,17 @@ def cz_error_budget_for_pulse(noise: CZNoiseParameters, j_pulse: np.ndarray, dt_
 
     # (b), (c) filter functions for Z₁/2, Z₂/2 (b in MHz) and exchange N = σ·σ/4 with a = J(t) (b = δJ/J)
     ops = [(_Z1 / 2.0, np.ones_like(j)), (_Z2 / 2.0, np.ones_like(j)), (HEISENBERG_EXCHANGE / 4.0, j)]
-    w_r = 2.0 * np.pi * noise.f_ramsey_hz * 1e-9                     # rad/ns
-    w_max = np.pi / dt_ns
-    omega = np.concatenate([[0.0], np.logspace(np.log10(w_r), np.log10(w_max), int(n_omega))])
-    F = gate_filter_functions(Hs, dt_ns, ops, omega)                  # (3, n_omega + 1)
+    coupling = mechanisms.gate_zeeman if mechanisms is not None else None
+    if coupling is not None:                                          # the same δJ/J source, on Z₁/2 and Z₂/2
+        k = coupling.sensitivity_mhz(j)
+        ops += [(_Z1 / 2.0, k[0]), (_Z2 / 2.0, k[1])]
+    omega = _omega_grid(noise, dt_ns, n_omega)
+    R = control_matrix(Hs, dt_ns, ops, omega)                         # (n_ops, n_omega + 1, 15)
+    F = np.sum(np.abs(R[:3]) ** 2, axis=-1)                           # (3, n_omega + 1)
     sig = np.array([noise.zeeman_sigma_mhz[0], noise.zeeman_sigma_mhz[1], noise.exchange_sigma_rel])
     qs = sig**2 * F[:, 0] / D                                         # entanglement infidelity
     A = noise.psd_amplitudes()
-    w = omega[1:]
-    f_hz = w * 1e9 / (2.0 * np.pi)
-    S = 1e9 * A[:, None] * f_hz[None, :] ** (-noise.alphas[:, None])  # one-sided, per (rad/ns)
-    _trapz = getattr(np, "trapezoid", None) or np.trapz               # NumPy < 2.0
-    fast = _trapz(S * F[:, 1:] * w[None, :], np.log(w), axis=1) / (2.0 * np.pi * D)
+    fast = _fast_part(F, A, noise.alphas, omega)
 
     # (d) Lindblad with the noiseless Hamiltonian, against the noiseless propagator
     Dsup = noise.dissipator()
@@ -438,20 +661,87 @@ def cz_error_budget_for_pulse(noise: CZNoiseParameters, j_pulse: np.ndarray, dt_
     else:
         markov_e = 0.0
 
+    gap: Dict[str, float] = {}
+    if mechanisms is not None and mechanisms.active():
+        F_ex = F[2]
+        if coupling is not None:
+            F_ex = np.sum(np.abs(R[2] + R[3] + R[4]) ** 2, axis=-1)     # exchange noise with the frequency coupling
+        gap = _gap_terms(noise, mechanisms, j, dt_ns, F, F_ex, A, omega, n_omega)
+
     return CZErrorBudget(
         label=label, duration_ns=float(T), j_max_mhz=float(j.max()), delta_ez_mhz=float(noise.delta_ez_mhz),
         coherent=float(coherent),
         zeeman_quasistatic=float(E_TO_AVG * (qs[0] + qs[1])), zeeman_fast=float(E_TO_AVG * (fast[0] + fast[1])),
         exchange_quasistatic=float(E_TO_AVG * qs[2]), exchange_fast=float(E_TO_AVG * fast[2]),
-        markovian=float(E_TO_AVG * markov_e), dt_ns=float(dt_ns), j_pulse=j,
+        markovian=float(E_TO_AVG * markov_e), dt_ns=float(dt_ns), j_pulse=j, gap=gap,
     )
 
 
+def _gap_terms(noise: CZNoiseParameters, mech: GapMechanisms, j: np.ndarray, dt_ns: float, F: np.ndarray,
+               F_ex: np.ndarray, A: np.ndarray, omega: np.ndarray, n_omega: int) -> Dict[str, float]:
+    """The switched-on ``GapMechanisms`` terms (average infidelity), see ``cz_error_budget_for_pulse``."""
+    on = mech.active()
+    out: Dict[str, float] = {}
+    if "gate_zeeman" in on:
+        dF = (F_ex - F[2])[None, :]
+        qs = noise.exchange_sigma_rel**2 * dF[0, 0] / D
+        fast = _fast_part(dF, A[2:3], noise.alphas[2:3], omega)[0]
+        out["gate_zeeman"] = float(E_TO_AVG * (qs + fast))
+    if "slow_zeeman" in on:
+        f_run = float(mech.zeeman_f_run_hz)
+        var = [A[q] * _band_integral(f_run, noise.f_low_hz, noise.alphas[q]) for q in range(2)]
+        out["slow_zeeman"] = float(E_TO_AVG * (var[0] * F[0, 0] + var[1] * F[1, 0]) / D)
+    if "slow_exchange" in on:
+        var = A[2] * _band_integral(float(mech.exchange_f_run_hz), noise.f_low_hz, noise.alphas[2])
+        out["slow_exchange"] = float(E_TO_AVG * var * F_ex[0] / D)
+    if "distortion" in on:
+        filt, ref, dt = distorted_pulse(j, dt_ns, float(mech.bandwidth_mhz), mech.voltage_map)
+        b_f = cz_error_budget_for_pulse(noise, filt, dt, n_omega=n_omega)
+        b_r = cz_error_budget_for_pulse(noise, ref, dt, n_omega=n_omega)
+        out["distortion"] = float(b_f.total - b_r.total)
+    if "residual_exchange" in on:
+        out["residual_exchange"] = residual_exchange_error(noise.delta_ez_mhz, mech.j_off_mhz, mech.idle_ns)
+    if "frequency_offset" in on:
+        d1, d2 = mech.frequency_offset_mhz
+        out["frequency_offset"] = float(E_TO_AVG * (d1**2 * F[0, 0] + d2**2 * F[1, 0]) / D)
+    if "exchange_offset" in on:
+        out["exchange_offset"] = float(E_TO_AVG * mech.exchange_offset_rel**2 * F_ex[0] / D)
+    if "calibration_residual" in on:
+        out["calibration_residual"] = float(mech.calibration_residual)
+    return out
+
+
 def cz_error_budget(noise: CZNoiseParameters, shape: str = "cosine", duration_ns: float = 100.0,
-                    n_steps: Optional[int] = None, tukey_alpha: float = 0.5, n_omega: int = 240) -> CZErrorBudget:
+                    n_steps: Optional[int] = None, tukey_alpha: float = 0.5, n_omega: int = 240,
+                    mechanisms: Optional[GapMechanisms] = None) -> CZErrorBudget:
     """Error budget of a window-shaped CZ (area 500 MHz·ns) of the given duration."""
     j, dt = shaped_cz_pulse(shape, duration_ns, noise.delta_ez_mhz, n_steps, tukey_alpha)
-    return cz_error_budget_for_pulse(noise, j, dt, label=shape, n_omega=n_omega)
+    return cz_error_budget_for_pulse(noise, j, dt, label=shape, n_omega=n_omega, mechanisms=mechanisms)
+
+
+# --------------------------------------------------------------------------- #
+# What the benchmarks report
+# --------------------------------------------------------------------------- #
+def irb_error_bound(reference_clifford_fidelity: float, interleaved_gate_fidelity: float, d: int = 4) -> Dict[str, float]:
+    """
+    Range that interleaved RB allows for the true gate error (Magesan et al., PRL 109, 080505
+    (2012)): r_est = (d−1)(1 − p_int/p)/d lies within ±E of it, with
+
+        E = min{ (d−1)[|p − p_int/p| + (1 − p)]/d ,  2(d²−1)(1 − p)/(p d²) + 4√(1−p)√(d²−1)/p }.
+
+    The point estimate is exact when the errors are depolarising; E is the worst case over
+    error models. When the reference error is larger than the gate error the first form is
+    E = 2 r_ref − r_est, so the range is set by the reference. Inputs are average fidelities
+    of the reference Clifford and of the interleaved gate as published.
+    """
+    r_ref = 1.0 - float(reference_clifford_fidelity)
+    r_est = 1.0 - float(interleaved_gate_fidelity)
+    p = 1.0 - d * r_ref / (d - 1.0)
+    ratio = 1.0 - d * r_est / (d - 1.0)                               # p_int / p
+    e1 = (d - 1.0) * (abs(p - ratio) + (1.0 - p)) / d
+    e2 = 2.0 * (d**2 - 1.0) * (1.0 - p) / (p * d**2) + 4.0 * np.sqrt(1.0 - p) * np.sqrt(d**2 - 1.0) / p
+    E = float(min(e1, e2))
+    return {"estimate": r_est, "bound": E, "lower": max(0.0, r_est - E), "upper": r_est + E, "p_ref": p}
 
 
 def sweep_gate_time(noise: CZNoiseParameters, durations_ns: Sequence[float], shape: str = "cosine",

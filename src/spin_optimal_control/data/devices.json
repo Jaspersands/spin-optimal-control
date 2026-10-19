@@ -40,7 +40,10 @@
         "Hahn or CPMG echo time",
         "electron temperature",
         "charge-noise spectrum (only quasi-static delta v_B)",
-        "29Si enrichment"
+        "29Si enrichment",
+        "pulse-line bandwidth or rise time",
+        "valley splitting, tunnel coupling (leakage)",
+        "GST run length (derived from the recalibration schedule)"
       ],
       "params": {
         "f_q1_ghz": {
@@ -100,6 +103,24 @@
           "value": 12.1,
           "uncertainty": 0.05,
           "source": "Xue 2022, Methods, Eq. 3, J(v_B) = J_res exp(2 alpha v_B), fit values",
+          "assumed": false
+        },
+        "barrier_beta_mhz_per_v_gamma": {
+          "value": [
+            -2.91,
+            67.2
+          ],
+          "uncertainty": [
+            0.11,
+            0.63
+          ],
+          "source": "Xue 2022, Methods, 'Fitting qubit frequencies and dephasing times' (B_z,j(v_B) = B_z,j(0) + beta_j v_B^gamma, fit values; the published version prints the unit MHz V^-gamma, arXiv v1 MHz^gamma/V^gamma)",
+          "assumed": false
+        },
+        "barrier_gamma": {
+          "value": 1.2,
+          "uncertainty": 0.01,
+          "source": "Xue 2022, Methods, 'Fitting qubit frequencies and dephasing times'",
           "assumed": false
         },
         "barrier_noise_mv": {
@@ -171,6 +192,23 @@
           "source": "Xue 2022, Extended Data Table 1, Methods 'CZ gate' and 'Gate set tomography'",
           "assumed": false
         },
+        "gst_cz_stochastic_epsilon": {
+          "value": 0.0042,
+          "source": "Xue 2022, Extended Data Table 1 (stochastic error generator epsilon_J of the CZ)",
+          "assumed": false
+        },
+        "gst_cz_hamiltonian_theta": {
+          "value": 0.016,
+          "source": "Xue 2022, Extended Data Table 1 (coherent error generator theta_J of the CZ)",
+          "assumed": false
+        },
+        "gst_cz_coherent_infidelity": {
+          "value": 0.000205,
+          "source": "Xue 2022, Extended Data Table 1 and Methods, Eq. 26",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "(d/(d+1)) theta_J^2 = 0.8 x 0.016^2, the coherent part of the average infidelity; the stochastic part is 0.8 x 0.0042 = 3.36e-3."
+        },
         "authors_simulated_infidelity": {
           "value": 0.00022,
           "source": "Xue 2022, Methods, 'CZ gate' (average gate infidelity 1 - F = 0.22e-3 with noise, < 1e-6 without). Their simulation takes delta f_Q1, delta f_Q2 as quasi-static and delta v_B as 1/f noise, and includes the barrier-voltage dependence of the qubit frequencies (beta_1, beta_2), which this model leaves out",
@@ -180,6 +218,13 @@
           "value": 2.0,
           "source": "Xue 2022, Methods, 'Gate calibration' (qubit frequencies recalibrated by Ramsey sequences every 2 h, at the start and in the middle of the GST run)",
           "assumed": false
+        },
+        "benchmark_duration_h": {
+          "value": 4.0,
+          "source": "Xue 2022, Methods, 'Gate calibration' (Ramsey recalibration 'every 2 h, at the beginning and in the middle' of the GST experiment)",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "A recalibration at the start and one in the middle, 2 h apart, puts the GST run at about 4 h; the run length is not printed. The methods describe no recalibration of J during the run, so exchange drift is taken over the whole run."
         },
         "drift_j_rel_per_sqrt_h": {
           "value": 0.01,
@@ -226,7 +271,9 @@
         "exchange-noise amplitude",
         "charge-noise spectrum",
         "T2 CPMG",
-        "individual qubit frequencies"
+        "individual qubit frequencies",
+        "benchmark duration",
+        "valley splitting, tunnel coupling (leakage)"
       ],
       "params": {
         "mean_zeeman_ghz": {
@@ -325,10 +372,40 @@
           "source": "Noiri 2022, main text and Fig. 2g",
           "assumed": false
         },
+        "reference_clifford_fidelity": {
+          "value": 0.9867,
+          "uncertainty": 0.0001,
+          "source": "Noiri 2022, main text and Fig. 2g (two-qubit Clifford fidelity F_C = 98.67 +/- 0.01%)",
+          "assumed": false
+        },
+        "single_qubit_primitive_fidelity": {
+          "value": [
+            0.9984,
+            0.9984
+          ],
+          "uncertainty": [
+            4e-05,
+            4e-05
+          ],
+          "source": "Noiri 2022, main text and Fig. 2c (F_p,1 = F_p,2 = 99.84 +/- 0.004%; each single-qubit gate is two CROT pulses, single-qubit RB)",
+          "assumed": false
+        },
         "reported_error_budget": {
           "value": "Simulated randomized benchmarking with quasi-static noise taken from measured Delta J, Delta f1 and Delta f2 traces (10,000 cycles of 1.706 s): about 0.1% infidelity per two-qubit primitive gate (two pi/2 CROT pulses, as in the CNOT) around f_R = 4-5 MHz; 'the infidelity due to dephasing is only 0.1%'. 'The remaining infidelity could originate from pulse calibration errors and long-term fluctuations in the device condition.'",
           "source": "Noiri 2022, main text (Fig. 3 discussion), Methods ('Simulation of two-qubit gate infidelity by quasi-static noise in resonance frequencies', and the noise-measurement paragraph) and Extended Data Fig. 5b",
           "assumed": false
+        },
+        "authors_simulated_infidelity": {
+          "value": 0.001,
+          "source": "Noiri 2022, main text (Fig. 3 discussion, 'the infidelity due to dephasing is only 0.1%'), Methods and Extended Data Fig. 5b; per two-qubit primitive gate, from simulated RB with measured quasi-static noise traces",
+          "assumed": false
+        },
+        "noise_record_h": {
+          "value": 4.74,
+          "source": "Noiri 2022, Methods, noise-measurement paragraph (10,000 cycles of 1.706 s)",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "10,000 x 1.706 s; the length of the noise traces used in the authors' simulation, not of the benchmark."
         }
       }
     },
@@ -346,7 +423,12 @@
         "charge-noise amplitude",
         "dJ/dV or exchange lever arm",
         "Ramsey averaging time",
-        "T2 CPMG"
+        "T2 CPMG",
+        "exchange at the idle barrier voltage",
+        "dependence of the qubit frequencies on the barrier voltage",
+        "pulse-line bandwidth or rise time",
+        "benchmark duration",
+        "valley splitting, tunnel coupling (leakage)"
       ],
       "params": {
         "f_q1_ghz": {
@@ -382,6 +464,11 @@
           "assumed": true,
           "basis": "assumed",
           "reason": "The exchange used for the CZ is taken as the ceiling. The model's Tukey window needs a 13.9 MHz peak to reach 500 MHz ns in 40 ns, so the model's own ceiling is that peak (Device.j_cap_mhz)."
+        },
+        "exchange_echo_floor_khz": {
+          "value": 10.0,
+          "source": "Mills 2022, Results (a spin echo measures residual exchange 'down to a T2 limit of J/h ~ 10 kHz')",
+          "assumed": false
         },
         "gate_time_ns": {
           "value": 40.0,
@@ -450,6 +537,13 @@
           "source": "Mills 2022, Results and Fig. 4 (F_CZ = 99.81 +/- 0.17%)",
           "assumed": false
         },
+        "reference_clifford_fidelity": {
+          "value": 0.9321,
+          "source": "Mills 2022, Results (RB paragraph) and Fig. 4 caption (r_ref = 0.0679)",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "1 - r_ref; the paper prints the reference error rate."
+        },
         "reported_error_budget": {
           "value": "No simulated budget. From RB, r_ref = 1.5 r_CZ + 8.25 r_SQ with r_CZ ~ 0.002. The authors suspect 'charge noise is one of the main limiting factors for the CZ gate', since it affects both the Z phases and the exchange amplitude, and attribute the short T2* to 'low-frequency charge noise coupling to the magnetic field gradient'.",
           "source": "Mills 2022, Results (RB paragraph) and Discussion",
@@ -472,7 +566,11 @@
         "electron temperature",
         "charge-noise or exchange-noise amplitude",
         "Ramsey averaging time",
-        "T2 CPMG"
+        "T2 CPMG",
+        "Stark shift of the qubits per volt on the J gate",
+        "pulse-line bandwidth or rise time",
+        "contextual Larmor shifts after microwave pulses (plotted in Fig. 4, not tabulated)",
+        "valley splitting, tunnel coupling (leakage)"
       ],
       "params": {
         "b_field_t": {
@@ -521,6 +619,11 @@
         "j_gate_slope_dec_per_v": {
           "value": 17.13,
           "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A) (J-gate turn on 17.13 dec/V)",
+          "assumed": false
+        },
+        "j_gate_swing_mv": {
+          "value": 330.4,
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A) (J-gate swing 330.4 mV)",
           "assumed": false
         },
         "gate_time_ns": {
@@ -605,11 +708,29 @@
           "source": "Tanttu 2024 arXiv v3, Extended Data Table 3, device A: 'mean,std' row 98.42 +/- 0.01% over IRB1 (98.43 +/- 0.22%) and IRB2 (98.41 +/- 0.13%); the uncertainty here is the larger single-run error. The published main text gives 98.4%.",
           "assumed": false
         },
+        "reference_clifford_fidelity": {
+          "value": 0.9075,
+          "uncertainty": 0.0005,
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 3, device A, 'mean,std' row (Clifford 90.75 +/- 0.05%)",
+          "assumed": false
+        },
         "measured_fidelity_gst": {
           "value": 0.968,
           "uncertainty": 0.002,
           "method": "GST",
           "source": "Tanttu 2024 arXiv v3, Extended Data Table 3 (GST A, CZ)",
+          "assumed": false
+        },
+        "benchmark_duration_h": {
+          "value": 2.2,
+          "source": "Tanttu 2024, main text, Fig. 3 caption ('Each IRB run consists of 200 (A) ... circuit randomizations') and Supplementary Information, FBT section ('Each batch of IRB takes around 40 seconds')",
+          "assumed": true,
+          "basis": "derived",
+          "reason": "200 batches of about 40 s; the run length is not printed."
+        },
+        "feedback_parameters": {
+          "value": "I_SET, epsilon, f_ESR (both qubits), P_X (both qubits), V_CZ, phi_CZ (both qubits)",
+          "source": "Tanttu 2024 arXiv v3, Extended Data Table 2 (published: Extended Data Table 1) (device A), 'Feedbacks' row",
           "assumed": false
         },
         "reported_error_budget": {

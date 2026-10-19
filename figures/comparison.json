@@ -21713,5 +21713,1146 @@
     }
    }
   }
- }
+ },
+ "gap": [
+  {
+   "key": "xue2022",
+   "short": "Xue 2022 (Delft)",
+   "measured": 0.0035,
+   "model": 0.000135451,
+   "gap": 0.00336455,
+   "terms": {
+    "gate_zeeman": {
+     "label": "qubit frequencies moved by the exchange-gate voltage",
+     "status": "modelled",
+     "value": 3.64733e-05,
+     "share": 0.0108405,
+     "note": "frequency fit against the gate voltage from the paper; the exchange noise is taken to be noise on that voltage, so it moves the qubit frequencies as well",
+     "required": null,
+     "sweep": null,
+     "df_dlnj_peak_mhz": [
+      -0.105834,
+      2.444
+     ]
+    },
+    "slow_zeeman": {
+     "label": "Zeeman noise slower than the Ramsey average",
+     "status": "modelled",
+     "value": 8.60595e-06,
+     "share": 0.00255783,
+     "note": "spectrum extended down to 1/(2 h)",
+     "required": {
+      "name": "duration_h",
+      "unit": "h",
+      "value": null,
+      "range": [
+       0.5,
+       1000.0
+      ],
+      "reached": false
+     },
+     "sweep": {
+      "name": "duration_h",
+      "unit": "h",
+      "x": [
+       0.5,
+       0.942011,
+       1.77477,
+       3.3437,
+       6.29961,
+       11.8686,
+       22.3607,
+       42.128,
+       79.3701,
+       149.535,
+       281.727,
+       530.78,
+       1000.0
+      ],
+      "y": [
+       4.20043e-06,
+       6.21335e-06,
+       8.22626e-06,
+       1.02392e-05,
+       1.22521e-05,
+       1.4265e-05,
+       1.62779e-05,
+       1.82909e-05,
+       2.03038e-05,
+       2.23167e-05,
+       2.43296e-05,
+       2.63425e-05,
+       2.83554e-05
+      ]
+     },
+     "hours": 2.0
+    },
+    "slow_exchange": {
+     "label": "exchange noise slower than the Ramsey average",
+     "status": "modelled",
+     "value": 1.49814e-05,
+     "share": 0.00445271,
+     "note": "spectrum extended down to 1/(4 h)",
+     "required": {
+      "name": "duration_h",
+      "unit": "h",
+      "value": null,
+      "range": [
+       0.5,
+       1000.0
+      ],
+      "reached": false
+     },
+     "sweep": {
+      "name": "duration_h",
+      "unit": "h",
+      "x": [
+       0.5,
+       0.942011,
+       1.77477,
+       3.3437,
+       6.29961,
+       11.8686,
+       22.3607,
+       42.128,
+       79.3701,
+       149.535,
+       281.727,
+       530.78,
+       1000.0
+      ],
+      "y": [
+       3.57306e-06,
+       5.28533e-06,
+       6.9976e-06,
+       8.70988e-06,
+       1.04222e-05,
+       1.21344e-05,
+       1.38467e-05,
+       1.5559e-05,
+       1.72712e-05,
+       1.89835e-05,
+       2.06958e-05,
+       2.24081e-05,
+       2.41203e-05
+      ]
+     },
+     "hours": 4.0
+    },
+    "distortion": {
+     "label": "pulse distortion from a finite bandwidth",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "line bandwidth not published; single-pole low-pass, the gate voltage is filtered and mapped to J with the paper's J(v), area recalibrated",
+     "required": {
+      "name": "bandwidth_mhz",
+      "unit": "MHz",
+      "value": null,
+      "range": [
+       1.0,
+       500.0
+      ],
+      "reached": false
+     },
+     "sweep": {
+      "name": "bandwidth_mhz",
+      "unit": "MHz",
+      "x": [
+       500.0,
+       297.89,
+       177.477,
+       105.737,
+       62.9961,
+       37.5318,
+       22.3607,
+       13.322,
+       7.93701,
+       4.72871,
+       2.81727,
+       1.67847,
+       1.0
+      ],
+      "y": [
+       -8.45452e-09,
+       -2.26949e-08,
+       -4.41556e-08,
+       -2.95086e-09,
+       5.64464e-08,
+       5.65367e-08,
+       1.67327e-07,
+       4.58848e-08,
+       -8.29008e-08,
+       -8.6333e-07,
+       -1.12321e-06,
+       -3.02758e-06,
+       -2.565e-06
+      ]
+     }
+    },
+    "residual_exchange": {
+     "label": "residual exchange outside the pulse",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "no paper gives a time outside the pulse that its benchmark assigns to the CZ",
+     "required": {
+      "name": "exchange_area_mhz_ns",
+      "unit": "MHz ns",
+      "value": 41.3146,
+      "range": [
+       0.1,
+       300.0
+      ],
+      "reached": true
+     },
+     "sweep": {
+      "name": "exchange_area_mhz_ns",
+      "unit": "MHz ns",
+      "x": [
+       0.1,
+       0.194877,
+       0.37977,
+       0.740083,
+       1.44225,
+       2.81061,
+       5.47723,
+       10.6738,
+       20.8008,
+       40.536,
+       78.9953,
+       153.943,
+       300.0
+      ],
+      "y": [
+       5.53898e-08,
+       1.75539e-07,
+       3.82961e-07,
+       1.16508e-06,
+       4.23538e-06,
+       1.56004e-05,
+       5.93354e-05,
+       0.000224956,
+       0.000853887,
+       0.0032391,
+       0.0122548,
+       0.0458745,
+       0.164886
+      ]
+     },
+     "j_reference_mhz": 0.0588,
+     "time_required_ns": 702.629,
+     "per_100ns": 6.83305e-05
+    },
+    "frequency_offset": {
+     "label": "uncalibrated qubit-frequency offset",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "rms offset of both qubit frequencies during the gate",
+     "required": {
+      "name": "frequency_offset_khz",
+      "unit": "kHz",
+      "value": 146.096,
+      "reached": true
+     },
+     "sweep": null,
+     "sigma_khz": [
+      11.0,
+      24.0
+     ]
+    },
+    "exchange_offset": {
+     "label": "uncalibrated exchange offset",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "rms offset of dJ/J during the gate",
+     "required": {
+      "name": "exchange_offset_rel",
+      "unit": "",
+      "value": 0.0821371,
+      "reached": true
+     },
+     "sweep": null,
+     "sigma_rel": 0.00968
+    },
+    "calibration_residual": {
+     "label": "coherent calibration residual (measured)",
+     "status": "measured",
+     "value": 0.000205,
+     "share": 0.0609294,
+     "note": "coherent part of the GST error generator; the paper gives no cause",
+     "required": null,
+     "sweep": null
+    }
+   },
+   "bounds": {},
+   "benchmark": {
+    "method": "GST",
+    "gst": {
+     "stochastic": 0.00336,
+     "coherent": 0.0002048
+    }
+   },
+   "closed": 0.000265061,
+   "closed_share": 0.0787805,
+   "remaining": 0.00309949,
+   "model_with_terms": 0.000400512
+  },
+  {
+   "key": "noiri2022",
+   "short": "Noiri 2022 (RIKEN)",
+   "measured": 0.0049,
+   "model": 0.000232563,
+   "gap": 0.00466744,
+   "terms": {
+    "gate_zeeman": {
+     "label": "qubit frequencies moved by the exchange-gate voltage",
+     "status": "not applicable",
+     "value": null,
+     "share": null,
+     "note": "the exchange is always on; there is no exchange pulse",
+     "required": null,
+     "sweep": null
+    },
+    "slow_zeeman": {
+     "label": "Zeeman noise slower than the Ramsey average",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "benchmark duration not published",
+     "required": {
+      "name": "duration_h",
+      "unit": "h",
+      "value": null,
+      "range": [
+       0.5,
+       1000.0
+      ],
+      "reached": false
+     },
+     "sweep": {
+      "name": "duration_h",
+      "unit": "h",
+      "x": [
+       0.5,
+       0.942011,
+       1.77477,
+       3.3437,
+       6.29961,
+       11.8686,
+       22.3607,
+       42.128,
+       79.3701,
+       149.535,
+       281.727,
+       530.78,
+       1000.0
+      ],
+      "y": [
+       1.95689e-05,
+       2.33558e-05,
+       2.70447e-05,
+       3.06385e-05,
+       3.41402e-05,
+       3.75526e-05,
+       4.08784e-05,
+       4.41201e-05,
+       4.72803e-05,
+       5.03614e-05,
+       5.33658e-05,
+       5.62957e-05,
+       5.91533e-05
+      ]
+     }
+    },
+    "slow_exchange": {
+     "label": "exchange noise slower than the Ramsey average",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "benchmark duration not published",
+     "required": {
+      "name": "duration_h",
+      "unit": "h",
+      "value": null,
+      "range": [
+       0.5,
+       1000.0
+      ],
+      "reached": false
+     },
+     "sweep": {
+      "name": "duration_h",
+      "unit": "h",
+      "x": [
+       0.5,
+       0.942011,
+       1.77477,
+       3.3437,
+       6.29961,
+       11.8686,
+       22.3607,
+       42.128,
+       79.3701,
+       149.535,
+       281.727,
+       530.78,
+       1000.0
+      ],
+      "y": [
+       1.06085e-06,
+       1.28264e-06,
+       1.50443e-06,
+       1.72623e-06,
+       1.94802e-06,
+       2.16981e-06,
+       2.3916e-06,
+       2.6134e-06,
+       2.83519e-06,
+       3.05698e-06,
+       3.27878e-06,
+       3.50057e-06,
+       3.72236e-06
+      ]
+     }
+    },
+    "distortion": {
+     "label": "pulse distortion from a finite bandwidth",
+     "status": "not applicable",
+     "value": null,
+     "share": null,
+     "note": "the exchange is always on; there is no exchange pulse",
+     "required": null,
+     "sweep": null
+    },
+    "residual_exchange": {
+     "label": "residual exchange outside the pulse",
+     "status": "not applicable",
+     "value": null,
+     "share": null,
+     "note": "the exchange is always on; there is no exchange pulse",
+     "required": null,
+     "sweep": null
+    },
+    "frequency_offset": {
+     "label": "uncalibrated qubit-frequency offset",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "rms offset of both qubit frequencies during the gate",
+     "required": {
+      "name": "frequency_offset_khz",
+      "unit": "kHz",
+      "value": 166.93,
+      "reached": true
+     },
+     "sweep": null,
+     "sigma_khz": [
+      31.9261,
+      30.8328
+     ]
+    },
+    "exchange_offset": {
+     "label": "uncalibrated exchange offset",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "rms offset of dJ/J during the gate",
+     "required": {
+      "name": "exchange_offset_rel",
+      "unit": "",
+      "value": 0.0971961,
+      "reached": true
+     },
+     "sweep": null,
+     "sigma_rel": 0.0034
+    },
+    "calibration_residual": {
+     "label": "coherent calibration residual (measured)",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "no coherent part of the two-qubit error is tabulated",
+     "required": null,
+     "sweep": null
+    }
+   },
+   "bounds": {
+    "drive": {
+     "label": "heating, leakage or other drive errors",
+     "status": "upper bound",
+     "value": 0.0016,
+     "share": 0.342801,
+     "note": "the authors' argument: a single-qubit primitive, also two CROT pulses, has this error in total (single-qubit RB)"
+    }
+   },
+   "benchmark": {
+    "method": "interleaved RB, CNOT",
+    "irb": {
+     "estimate": 0.0049,
+     "bound": 0.0217,
+     "lower": 0.0,
+     "upper": 0.0266,
+     "p_ref": 0.982267
+    }
+   },
+   "closed": 0.0,
+   "closed_share": 0.0,
+   "remaining": 0.00466744,
+   "model_with_terms": 0.000232563
+  },
+  {
+   "key": "mills2022",
+   "short": "Mills 2022 (Princeton)",
+   "measured": 0.0019,
+   "model": 0.000400491,
+   "gap": 0.00149951,
+   "terms": {
+    "gate_zeeman": {
+     "label": "qubit frequencies moved by the exchange-gate voltage",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "no fit of the qubit frequencies against the gate voltage; shown for a shift of one qubit linear in the voltage, df/d(ln J), with the model's exchange noise",
+     "required": {
+      "name": "df_dlnj_mhz",
+      "unit": "MHz",
+      "value": null,
+      "range": [
+       0.01,
+       30.0
+      ],
+      "reached": false
+     },
+     "sweep": {
+      "name": "df_dlnj_mhz",
+      "unit": "MHz",
+      "x": [
+       0.01,
+       0.0194877,
+       0.037977,
+       0.0740083,
+       0.144225,
+       0.281061,
+       0.547723,
+       1.06738,
+       2.08008,
+       4.0536,
+       7.89953,
+       15.3943,
+       30.0
+      ],
+      "y": [
+       -5.77703e-09,
+       -1.10023e-08,
+       -2.04698e-08,
+       -3.62025e-08,
+       -5.65431e-08,
+       -5.69939e-08,
+       9.09521e-08,
+       9.44455e-07,
+       4.75416e-06,
+       2.03298e-05,
+       8.164e-05,
+       0.000318684,
+       0.0012271
+      ]
+     }
+    },
+    "slow_zeeman": {
+     "label": "Zeeman noise slower than the Ramsey average",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "benchmark duration not published",
+     "required": {
+      "name": "duration_h",
+      "unit": "h",
+      "value": 2.76474,
+      "range": [
+       0.5,
+       1000.0
+      ],
+      "reached": true
+     },
+     "sweep": {
+      "name": "duration_h",
+      "unit": "h",
+      "x": [
+       0.5,
+       0.942011,
+       1.77477,
+       3.3437,
+       6.29961,
+       11.8686,
+       22.3607,
+       42.128,
+       79.3701,
+       149.535,
+       281.727,
+       530.78,
+       1000.0
+      ],
+      "y": [
+       0.000603393,
+       0.000861787,
+       0.00120117,
+       0.00164921,
+       0.00224347,
+       0.00303501,
+       0.0040933,
+       0.00551301,
+       0.0074232,
+       0.00999999,
+       0.0134839,
+       0.0182035,
+       0.024608
+      ]
+     }
+    },
+    "slow_exchange": {
+     "label": "exchange noise slower than the Ramsey average",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "benchmark duration not published",
+     "required": {
+      "name": "duration_h",
+      "unit": "h",
+      "value": null,
+      "range": [
+       0.5,
+       1000.0
+      ],
+      "reached": false
+     },
+     "sweep": {
+      "name": "duration_h",
+      "unit": "h",
+      "x": [
+       0.5,
+       0.942011,
+       1.77477,
+       3.3437,
+       6.29961,
+       11.8686,
+       22.3607,
+       42.128,
+       79.3701,
+       149.535,
+       281.727,
+       530.78,
+       1000.0
+      ],
+      "y": [
+       7.55683e-06,
+       9.21287e-06,
+       1.08689e-05,
+       1.25249e-05,
+       1.4181e-05,
+       1.5837e-05,
+       1.74931e-05,
+       1.91491e-05,
+       2.08051e-05,
+       2.24612e-05,
+       2.41172e-05,
+       2.57732e-05,
+       2.74293e-05
+      ]
+     }
+    },
+    "distortion": {
+     "label": "pulse distortion from a finite bandwidth",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "line bandwidth not published; single-pole low-pass, J is filtered directly; no J(v) is published, area recalibrated",
+     "required": {
+      "name": "bandwidth_mhz",
+      "unit": "MHz",
+      "value": null,
+      "range": [
+       1.0,
+       500.0
+      ],
+      "reached": false
+     },
+     "sweep": {
+      "name": "bandwidth_mhz",
+      "unit": "MHz",
+      "x": [
+       500.0,
+       297.89,
+       177.477,
+       105.737,
+       62.9961,
+       37.5318,
+       22.3607,
+       13.322,
+       7.93701,
+       4.72871,
+       2.81727,
+       1.67847,
+       1.0
+      ],
+      "y": [
+       -8.78799e-08,
+       -1.45379e-07,
+       -1.95022e-07,
+       -2.32621e-07,
+       -2.90418e-07,
+       -4.12042e-07,
+       -6.39281e-07,
+       -1.06181e-06,
+       -1.67818e-06,
+       -2.39824e-06,
+       -3.03981e-06,
+       -3.36526e-06,
+       -3.02506e-06
+      ]
+     }
+    },
+    "residual_exchange": {
+     "label": "residual exchange outside the pulse",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "no paper gives a time outside the pulse that its benchmark assigns to the CZ",
+     "required": {
+      "name": "exchange_area_mhz_ns",
+      "unit": "MHz ns",
+      "value": 27.5706,
+      "range": [
+       0.1,
+       300.0
+      ],
+      "reached": true
+     },
+     "sweep": {
+      "name": "exchange_area_mhz_ns",
+      "unit": "MHz ns",
+      "x": [
+       0.1,
+       0.194877,
+       0.37977,
+       0.740083,
+       1.44225,
+       2.81061,
+       5.47723,
+       10.6738,
+       20.8008,
+       40.536,
+       78.9953,
+       153.943,
+       300.0
+      ],
+      "y": [
+       1.97432e-08,
+       7.51172e-08,
+       2.84692e-07,
+       1.08133e-06,
+       4.10594e-06,
+       1.55931e-05,
+       5.92162e-05,
+       0.00022487,
+       0.000853762,
+       0.0032391,
+       0.0122547,
+       0.0458744,
+       0.164886
+      ]
+     },
+     "j_reference_mhz": 0.01,
+     "time_required_ns": 2757.06,
+     "per_100ns": 1.97415e-06
+    },
+    "frequency_offset": {
+     "label": "uncalibrated qubit-frequency offset",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "rms offset of both qubit frequencies during the gate",
+     "required": {
+      "name": "frequency_offset_khz",
+      "unit": "kHz",
+      "value": 243.682,
+      "reached": true
+     },
+     "sweep": null,
+     "sigma_khz": [
+      132.399,
+      97.8605
+     ]
+    },
+    "exchange_offset": {
+     "label": "uncalibrated exchange offset",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "rms offset of dJ/J during the gate",
+     "required": {
+      "name": "exchange_offset_rel",
+      "unit": "",
+      "value": 0.0550596,
+      "reached": true
+     },
+     "sweep": null,
+     "sigma_rel": 0.00968
+    },
+    "calibration_residual": {
+     "label": "coherent calibration residual (measured)",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "no coherent part of the two-qubit error is tabulated",
+     "required": null,
+     "sweep": null
+    }
+   },
+   "bounds": {},
+   "benchmark": {
+    "method": "interleaved RB",
+    "irb": {
+     "estimate": 0.0019,
+     "bound": 0.1339,
+     "lower": 0.0,
+     "upper": 0.1358,
+     "p_ref": 0.909467
+    }
+   },
+   "closed": 0.0,
+   "closed_share": 0.0,
+   "remaining": 0.00149951,
+   "model_with_terms": 0.000400491
+  },
+  {
+   "key": "tanttu2024",
+   "short": "Tanttu 2024 (UNSW/Diraq), device A",
+   "measured": 0.0158,
+   "model": 0.00166491,
+   "gap": 0.0141351,
+   "terms": {
+    "gate_zeeman": {
+     "label": "qubit frequencies moved by the exchange-gate voltage",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "no fit of the qubit frequencies against the gate voltage; shown for a shift of one qubit linear in the voltage, df/d(ln J), with the model's exchange noise",
+     "required": {
+      "name": "df_dlnj_mhz",
+      "unit": "MHz",
+      "value": 10.0585,
+      "range": [
+       0.01,
+       30.0
+      ],
+      "reached": true
+     },
+     "sweep": {
+      "name": "df_dlnj_mhz",
+      "unit": "MHz",
+      "x": [
+       0.01,
+       0.0194877,
+       0.037977,
+       0.0740083,
+       0.144225,
+       0.281061,
+       0.547723,
+       1.06738,
+       2.08008,
+       4.0536,
+       7.89953,
+       15.3943,
+       30.0
+      ],
+      "y": [
+       -4.51551e-07,
+       -8.53237e-07,
+       -1.56124e-06,
+       -2.65697e-06,
+       -3.71367e-06,
+       -1.67671e-06,
+       1.78491e-05,
+       0.000114978,
+       0.00052862,
+       0.00218676,
+       0.00865391,
+       0.0335456,
+       0.128722
+      ]
+     }
+    },
+    "slow_zeeman": {
+     "label": "Zeeman noise slower than the Ramsey average",
+     "status": "upper bound",
+     "value": 0.00175402,
+     "share": 0.12409,
+     "note": "spectrum extended down to 1/(2.2 h); f_ESR was fed back during the run, which removes part of this drift",
+     "required": {
+      "name": "duration_h",
+      "unit": "h",
+      "value": null,
+      "range": [
+       0.5,
+       1000.0
+      ],
+      "reached": false
+     },
+     "sweep": {
+      "name": "duration_h",
+      "unit": "h",
+      "x": [
+       0.5,
+       0.942011,
+       1.77477,
+       3.3437,
+       6.29961,
+       11.8686,
+       22.3607,
+       42.128,
+       79.3701,
+       149.535,
+       281.727,
+       530.78,
+       1000.0
+      ],
+      "y": [
+       0.0010068,
+       0.00130301,
+       0.00163349,
+       0.00200219,
+       0.00241354,
+       0.00287246,
+       0.00338447,
+       0.0039557,
+       0.00459301,
+       0.00530404,
+       0.0060973,
+       0.00698233,
+       0.00796972
+      ]
+     },
+     "hours": 2.2
+    },
+    "slow_exchange": {
+     "label": "exchange noise slower than the Ramsey average",
+     "status": "upper bound",
+     "value": 3.41883e-05,
+     "share": 0.00241869,
+     "note": "spectrum extended down to 1/(2.2 h); V_CZ was fed back during the run, which removes part of this drift",
+     "required": {
+      "name": "duration_h",
+      "unit": "h",
+      "value": null,
+      "range": [
+       0.5,
+       1000.0
+      ],
+      "reached": false
+     },
+     "sweep": {
+      "name": "duration_h",
+      "unit": "h",
+      "x": [
+       0.5,
+       0.942011,
+       1.77477,
+       3.3437,
+       6.29961,
+       11.8686,
+       22.3607,
+       42.128,
+       79.3701,
+       149.535,
+       281.727,
+       530.78,
+       1000.0
+      ],
+      "y": [
+       2.26024e-05,
+       2.75556e-05,
+       3.25087e-05,
+       3.74619e-05,
+       4.24151e-05,
+       4.73683e-05,
+       5.23215e-05,
+       5.72746e-05,
+       6.22278e-05,
+       6.7181e-05,
+       7.21342e-05,
+       7.70874e-05,
+       8.20406e-05
+      ]
+     },
+     "hours": 2.2
+    },
+    "distortion": {
+     "label": "pulse distortion from a finite bandwidth",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "line bandwidth not published; single-pole low-pass, the gate voltage is filtered and mapped to J with the paper's J(v), area recalibrated",
+     "required": {
+      "name": "bandwidth_mhz",
+      "unit": "MHz",
+      "value": 2.73892,
+      "range": [
+       1.0,
+       500.0
+      ],
+      "reached": true
+     },
+     "sweep": {
+      "name": "bandwidth_mhz",
+      "unit": "MHz",
+      "x": [
+       500.0,
+       297.89,
+       177.477,
+       105.737,
+       62.9961,
+       37.5318,
+       22.3607,
+       13.322,
+       7.93701,
+       4.72871,
+       2.81727,
+       1.67847,
+       1.0
+      ],
+      "y": [
+       1.3979e-05,
+       3.97642e-05,
+       0.000112513,
+       0.000317573,
+       0.000878931,
+       0.00228544,
+       0.00525872,
+       0.00848816,
+       0.00756254,
+       0.00625612,
+       0.0137414,
+       0.0230817,
+       0.0184233
+      ]
+     }
+    },
+    "residual_exchange": {
+     "label": "residual exchange outside the pulse",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "no paper gives a time outside the pulse that its benchmark assigns to the CZ",
+     "required": {
+      "name": "exchange_area_mhz_ns",
+      "unit": "MHz ns",
+      "value": 84.8734,
+      "range": [
+       0.1,
+       300.0
+      ],
+      "reached": true
+     },
+     "sweep": {
+      "name": "exchange_area_mhz_ns",
+      "unit": "MHz ns",
+      "x": [
+       0.1,
+       0.194877,
+       0.37977,
+       0.740083,
+       1.44225,
+       2.81061,
+       5.47723,
+       10.6738,
+       20.8008,
+       40.536,
+       78.9953,
+       153.943,
+       300.0
+      ],
+      "y": [
+       1.97392e-08,
+       7.49635e-08,
+       2.84689e-07,
+       1.08116e-06,
+       4.10591e-06,
+       1.55929e-05,
+       5.92162e-05,
+       0.000224869,
+       0.000853762,
+       0.0032391,
+       0.0122547,
+       0.0458744,
+       0.164886
+      ]
+     },
+     "j_reference_mhz": 4.2e-06,
+     "time_required_ns": 20208000.0,
+     "per_100ns": 3.59934e-13
+    },
+    "frequency_offset": {
+     "label": "uncalibrated qubit-frequency offset",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "rms offset of both qubit frequencies during the gate",
+     "required": {
+      "name": "frequency_offset_khz",
+      "unit": "kHz",
+      "value": 117.689,
+      "reached": true
+     },
+     "sweep": null,
+     "sigma_khz": [
+      40.9235,
+      34.6276
+     ]
+    },
+    "exchange_offset": {
+     "label": "uncalibrated exchange offset",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "rms offset of dJ/J during the gate",
+     "required": {
+      "name": "exchange_offset_rel",
+      "unit": "",
+      "value": 0.164731,
+      "reached": true
+     },
+     "sweep": null,
+     "sigma_rel": 0.0158
+    },
+    "calibration_residual": {
+     "label": "coherent calibration residual (measured)",
+     "status": "not published",
+     "value": null,
+     "share": null,
+     "note": "no coherent part of the two-qubit error is tabulated",
+     "required": null,
+     "sweep": null
+    }
+   },
+   "bounds": {},
+   "benchmark": {
+    "method": "interleaved RB",
+    "irb": {
+     "estimate": 0.0158,
+     "bound": 0.1692,
+     "lower": 0.0,
+     "upper": 0.185,
+     "p_ref": 0.876667
+    },
+    "gst_infidelity": 0.032
+   },
+   "closed": 0.00178821,
+   "closed_share": 0.126508,
+   "remaining": 0.0123469,
+   "model_with_terms": 0.00345312
+  }
+ ]
 }
